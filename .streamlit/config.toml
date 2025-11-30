@@ -1,0 +1,10 @@
+[theme]
+primaryColor = "#3B82F6"  # Modern blue
+backgroundColor = "#0F172A"  # Dark navy
+secondaryBackgroundColor = "#1E293B"  # Lighter navy
+textColor = "#F1F5F9"  # Light gray
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = true

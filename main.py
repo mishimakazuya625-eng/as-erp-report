@@ -323,39 +323,180 @@ def show_report():
     st.title("📊 Report 출력")
     st.info("Coming Soon: Reporting Module")
 
+# --- Custom CSS for Modern UI ---
+def load_custom_css():
+    st.markdown("""
+    <style>
+    /* Main container */
+    .stApp {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
+        border-right: 2px solid #3b82f6;
+    }
+    
+    section[data-testid="stSidebar"] .stRadio > label {
+        color: #e0e7ff !important;
+        font-weight: 600;
+        padding: 0.5rem 0;
+        transition: all 0.3s ease;
+    }
+    
+    section[data-testid="stSidebar"] .stRadio > label:hover {
+        color: #ffffff !important;
+        transform: translateX(5px);
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        color: #ffffff !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(255,255,255,0.1);
+        padding: 0.5rem;
+        border-radius: 10px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
+        color: #e0e7ff;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(255,255,255,0.2);
+        transform: translateY(-2px);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Cards & Containers */
+    .stMarkdown, .stDataFrame {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+        font-weight: 600;
+        padding: 0.75rem 2rem;
+        border-radius: 8px;
+        border: none;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Metrics */
+    div[data-testid="stMetricValue"] {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #3b82f6;
+    }
+    
+    /* Info boxes */
+    .stAlert {
+        border-radius: 12px;
+        border-left: 4px solid #3b82f6;
+        background: rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Dataframe */
+    .dataframe {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- Main Application ---
 def main():
-    st.set_page_config(page_title="AS ERP System", layout="wide")
+    st.set_page_config(
+        page_title="AS ERP System",
+        page_icon="🏭",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Load custom CSS
+    load_custom_css()
     
     # Initialize DB
     init_db()
     schema_update_module.init_schema_tables()
+    
+    # Header with logo/brand
+    st.markdown("""
+        <div style='text-align: center; padding: 1rem 0 2rem 0;'>
+            <h1 style='font-size: 3rem; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                       -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;'>
+                🏭 AS ERP System
+            </h1>
+            <p style='color: #e0e7ff; font-size: 1.1rem; margin-top: 0.5rem;'>
+                Advanced Supply Chain & Resource Planning
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    st.sidebar.title("AS ERP Navigation")
+    # Sidebar with modern navigation
+    with st.sidebar:
+        st.markdown("### 📊 Navigation")
+        
+        menu_options = [
+            "1. 🔧 상품등록/수정",
+            "2. 📦 PO upload 및 관리",
+            "3. 🔩 BOM 관리 및 대체자재",
+            "4. 🏭 생산처 및 재고 관리",
+            "5. 📅 원자재 일정 관리",
+            "6. 🚨 결품 분석 리포트"
+        ]
+        
+        selection = st.radio("", menu_options, label_visibility="collapsed")
+        
+        # Footer
+        st.markdown("---")
+        st.markdown("""
+            <div style='text-align: center; color: #94a3b8; font-size: 0.85rem;'>
+                <p>v1.0.0 | Powered by Streamlit</p>
+                <p>© 2025 AS ERP</p>
+            </div>
+        """, unsafe_allow_html=True)
     
-    menu_options = [
-        "1. 상품등록/수정",
-        "2. PO upload 및 관리",
-        "3. BOM 관리 및 대체자재",
-        "4. 생산처 및 재고 관리",
-        "5. 원자재 일정 및 완제품 일정 관리",
-        "6. 결품 분석 리포트"
-    ]
-    
-    selection = st.sidebar.radio("Go to", menu_options)
-    
-    if selection == "1. 상품등록/수정":
+    if selection == "1. 🔧 상품등록/수정":
         show_product_master()
-    elif selection == "2. PO upload 및 관리":
+    elif selection == "2. 📦 PO upload 및 관리":
         show_po_management()
-    elif selection == "3. BOM 관리 및 대체자재":
+    elif selection == "3. 🔩 BOM 관리 및 대체자재":
         show_bom_management()
-    elif selection == "4. 생산처 및 재고 관리":
+    elif selection == "4. 🏭 생산처 및 재고 관리":
         show_schema_management()
-    elif selection == "5. 원자재 일정 및 완제품 일정 관리":
+    elif selection == "5. 📅 원자재 일정 관리":
         show_schedule_management()
-    elif selection == "6. 결품 분석 리포트":
+    elif selection == "6. 🚨 결품 분석 리포트":
         show_shortage_analysis()
 
 if __name__ == "__main__":
     main()
+
