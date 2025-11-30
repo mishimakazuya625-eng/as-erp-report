@@ -212,22 +212,6 @@ def show_order_management():
         1. Validates PN against Product_Master
         2. Updates existing orders & closes when delivered
         3. Inserts new orders with URGENT/OPEN status
-        4. Cancels orders not in CSV (superseded)
-        """)
-        
-        uploaded_file = st.file_uploader("Upload CSV", type=['csv'], key="order_upload")
-        
-        if uploaded_file is not None:
-            try:
-                df = pd.read_csv(uploaded_file)
-                
-                # Check required columns
-                required_cols = {'ORDER_KEY', 'PN', 'ORDER_QTY', 'DELIVERED_QTY', 'ORDER_DATE'}
-                if not required_cols.issubset(df.columns):
-                    st.error(f"Missing columns: {', '.join(required_cols - set(df.columns))}")
-                else:
-                    st.dataframe(df.head(10))
-                    
                     if st.button("Process UPSERT", type="primary"):
                         with st.spinner("Processing UPSERT..."):
                             results = upsert_orders(df)

@@ -162,7 +162,8 @@ def show_product_master():
         
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file)
+                # Use utf-8-sig to handle BOM from Excel
+                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
                 
                 # 1. Integrity Check: Required Columns
                 required_columns = {'PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE'}

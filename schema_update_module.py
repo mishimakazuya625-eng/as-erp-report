@@ -215,7 +215,7 @@ def show_schema_management():
         # Upload
         uploaded_file = st.file_uploader("Upload Plant Site CSV", type=['csv'])
         if uploaded_file:
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
             if 'SITE_CODE' not in df.columns:
                 st.error("CSV must have 'SITE_CODE' column.")
             else:
@@ -257,7 +257,7 @@ def show_schema_management():
         inv_file = st.file_uploader("Upload Inventory CSV", type=['csv'], key="inv_upload")
         
         if inv_file:
-            df = pd.read_csv(inv_file)
+            df = pd.read_csv(inv_file, encoding='utf-8-sig')
             st.write("Preview:", df.head())
             
             if st.button("Process Inventory Upload"):
