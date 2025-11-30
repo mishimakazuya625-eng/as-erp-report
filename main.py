@@ -15,6 +15,11 @@ def get_db_connection():
     # Format: postgresql://user:password@host:port/dbname
     try:
         db_url = st.secrets["db_url"]
+        # Add SSL mode if not present
+        if '?' not in db_url:
+            db_url += '?sslmode=require'
+        elif 'sslmode' not in db_url:
+            db_url += '&sslmode=require'
         conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
         return conn
     except KeyError:
