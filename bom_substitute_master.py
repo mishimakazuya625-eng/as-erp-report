@@ -187,7 +187,15 @@ def show_bom_management():
             
             if uploaded_file is not None:
                 try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                    # Robust CSV Loading
+                    try:
+                        df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                    except UnicodeDecodeError:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding='cp949')
+                    
+                    # Normalize columns
+                    df.columns = df.columns.str.strip().str.upper()
                     
                     required_cols = {'PARENT_PN', 'CHILD_PKID', 'BOM_QTY'}
                     if not required_cols.issubset(df.columns):
@@ -394,7 +402,15 @@ def show_bom_management():
             
             if uploaded_file is not None:
                 try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                    # Robust CSV Loading
+                    try:
+                        df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                    except UnicodeDecodeError:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding='cp949')
+                    
+                    # Normalize columns
+                    df.columns = df.columns.str.strip().str.upper()
                     
                     required_cols = {'CHILD_PKID', 'SUBSTITUTE_PKID'}
                     if not required_cols.issubset(df.columns):

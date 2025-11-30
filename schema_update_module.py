@@ -215,16 +215,28 @@ def show_schema_management():
         # Upload
         uploaded_file = st.file_uploader("Upload Plant Site CSV", type=['csv'])
         if uploaded_file:
-            df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
-            if 'SITE_CODE' not in df.columns:
-                st.error("CSV must have 'SITE_CODE' column.")
-            else:
-                if st.button("Upload Sites"):
-                    success, msg = upsert_plant_sites(df)
-                    if success:
-                        st.success(msg)
-                    else:
-                        st.error(msg)
+            try:
+                # Robust CSV Loading
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp949')
+                
+                # Normalize columns
+                df.columns = df.columns.str.strip().str.upper()
+                
+                if 'SITE_CODE' not in df.columns:
+                    st.error("CSV must have 'SITE_CODE' column.")
+                else:
+                    if st.button("Upload Sites"):
+                        success, msg = upsert_plant_sites(df)
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+            except Exception as e:
+                st.error(f"Error processing CSV: {e}")
         
         # View & Delete
         conn = get_db_connection()
@@ -257,15 +269,27 @@ def show_schema_management():
         inv_file = st.file_uploader("Upload Inventory CSV", type=['csv'], key="inv_upload")
         
         if inv_file:
-            df = pd.read_csv(inv_file, encoding='utf-8-sig')
-            st.write("Preview:", df.head())
-            
-            if st.button("Process Inventory Upload"):
-                success, msg = process_inventory_upload(df, snapshot_date)
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
+            try:
+                # Robust CSV Loading
+                try:
+                    df = pd.read_csv(inv_file, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    inv_file.seek(0)
+                    df = pd.read_csv(inv_file, encoding='cp949')
+                
+                # Normalize columns
+                df.columns = df.columns.str.strip().str.upper()
+                
+                st.write("Preview:", df.head())
+                
+                if st.button("Process Inventory Upload"):
+                    success, msg = process_inventory_upload(df, snapshot_date)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+            except Exception as e:
+                st.error(f"Error processing CSV: {e}")
 
     # --- Tab 3: Inventory History ---
     with tab3:

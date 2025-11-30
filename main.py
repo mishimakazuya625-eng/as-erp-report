@@ -162,8 +162,15 @@ def show_product_master():
         
         if uploaded_file is not None:
             try:
-                # Use utf-8-sig to handle BOM from Excel
-                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                # Robust CSV Loading Logic
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp949')
+                
+                # Normalize column names: uppercase and strip whitespace
+                df.columns = df.columns.str.strip().str.upper()
                 
                 # 1. Integrity Check: Required Columns
                 required_columns = {'PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE'}

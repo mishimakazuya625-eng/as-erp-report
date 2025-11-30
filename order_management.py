@@ -218,7 +218,15 @@ def show_order_management():
         
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                # Robust CSV Loading
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp949')
+                
+                # Normalize columns
+                df.columns = df.columns.str.strip().str.upper()
                 
                 # Check required columns
                 required_cols = {'ORDER_KEY', 'PN', 'ORDER_QTY', 'DELIVERED_QTY', 'ORDER_DATE'}
