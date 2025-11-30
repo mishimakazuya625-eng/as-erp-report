@@ -333,8 +333,31 @@ def show_product_master():
         df = pd.read_sql_query(query, conn, params=params)
         conn.close()
         
+        # Normalize columns to uppercase for display
+        df.columns = df.columns.str.upper()
+        
         st.dataframe(df, use_container_width=True)
         st.write(f"Total Records: {len(df)}")
+        
+        # Cleanup Tool: Check for rows that look like headers
+        if not df.empty:
+            header_rows = df[df['PN'].astype(str).str.upper() == 'PN']
+            if not header_rows.empty:
+                st.warning(f"Found {len(header_rows)} rows that look like CSV headers (PN='PN').")
+                if st.button("Delete Invalid Header Rows"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    try:
+                        # Delete rows where PN is 'PN' or 'pn'
+                        cursor.execute("DELETE FROM Product_Master WHERE UPPER(PN) = 'PN'")
+                        conn.commit()
+                        st.success("Deleted invalid rows. Please refresh.")
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Failed to delete: {e}")
+                    finally:
+                        conn.close()
 
 def show_po_management():
     order_management.show_order_management()
