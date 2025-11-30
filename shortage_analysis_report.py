@@ -26,7 +26,11 @@ def get_filter_options():
     finally:
         conn.close()
     
-    return customers['CUSTOMER'].tolist(), sites['SITE_CODE'].tolist()
+    # Handle PostgreSQL lowercase column names
+    cust_col = 'customer' if 'customer' in customers.columns else 'CUSTOMER'
+    site_col = 'site_code' if 'site_code' in sites.columns else 'SITE_CODE'
+    
+    return customers[cust_col].tolist(), sites[site_col].tolist()
 
 def load_data(target_customers=None, target_sites=None, target_statuses=None):
     """Load data with Pre-Filtering applied"""
@@ -66,7 +70,11 @@ def load_data(target_customers=None, target_sites=None, target_statuses=None):
     
     # 4. Load Inventory Master (Latest Snapshot)
     latest_date_df = pd.read_sql_query("SELECT MAX(SNAPSHOT_DATE) as MAX_DATE FROM Inventory_Master", conn)
-    latest_date = latest_date_df.iloc[0]['MAX_DATE'] if not latest_date_df.empty else None
+    if not latest_date_df.empty:
+        date_col = 'max_date' if 'max_date' in latest_date_df.columns else 'MAX_DATE'
+        latest_date = latest_date_df.iloc[0][date_col]
+    else:
+        latest_date = None
     
     if latest_date:
         inventory = pd.read_sql_query("""
@@ -82,7 +90,8 @@ def load_data(target_customers=None, target_sites=None, target_statuses=None):
     
     # 6. Load All Plant Sites (For R2 Wide Format)
     all_plant_sites_df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master ORDER BY SITE_CODE", conn)
-    all_plant_sites = all_plant_sites_df['SITE_CODE'].tolist()
+    site_col = 'site_code' if 'site_code' in all_plant_sites_df.columns else 'SITE_CODE'
+    all_plant_sites = all_plant_sites_df[site_col].tolist()
     
     conn.close()
     
