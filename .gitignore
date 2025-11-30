@@ -1,0 +1,19 @@
+# Database
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv
+env/
+venv/
+
+# Streamlit secrets (중요!)
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
