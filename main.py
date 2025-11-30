@@ -10,24 +10,38 @@ import schema_update_module
 import shortage_analysis_report
 
 # --- Database Helper Functions ---
+# --- Database Helper Functions ---
+import time
+
 def get_db_connection():
     # Use Streamlit secrets for database URL
     # Format: postgresql://user:password@host:port/dbname
-    try:
-        db_url = st.secrets["db_url"]
-        # Add SSL mode if not present
-        if '?' not in db_url:
-            db_url += '?sslmode=require'
-        elif 'sslmode' not in db_url:
-            db_url += '&sslmode=require'
-        conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
-        return conn
-    except KeyError:
-        st.error("Database URL not found in secrets. Please set 'db_url' in .streamlit/secrets.toml")
-        st.stop()
-    except Exception as e:
-        st.error(f"Failed to connect to database: {e}")
-        st.stop()
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            db_url = st.secrets["db_url"]
+            # Add SSL mode if not present
+            if '?' not in db_url:
+                db_url += '?sslmode=require'
+            elif 'sslmode' not in db_url:
+                db_url += '&sslmode=require'
+            
+            conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+            return conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            st.error(f"Failed to connect to database after {max_retries} attempts: {e}")
+            st.stop()
+        except KeyError:
+            st.error("Database URL not found in secrets. Please set 'db_url' in .streamlit/secrets.toml")
+            st.stop()
+        except Exception as e:
+            st.error(f"Unexpected error connecting to database: {e}")
+            st.stop()
 
 def init_db():
     conn = get_db_connection()
