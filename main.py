@@ -332,106 +332,121 @@ def show_report():
 def load_custom_css():
     st.markdown("""
     <style>
-    /* Main container */
+    /* Main container - 부드러운 다크 배경 */
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #0F172A;
     }
     
-    /* Sidebar styling */
+    /* Sidebar - 차분한 다크 그레이 */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
-        border-right: 2px solid #3b82f6;
+        background: #1E293B;
+        border-right: 1px solid #334155;
     }
     
     section[data-testid="stSidebar"] .stRadio > label {
-        color: #e0e7ff !important;
-        font-weight: 600;
+        color: #CBD5E1 !important;
+        font-weight: 500;
         padding: 0.5rem 0;
         transition: all 0.3s ease;
     }
     
     section[data-testid="stSidebar"] .stRadio > label:hover {
-        color: #ffffff !important;
-        transform: translateX(5px);
+        color: #60A5FA !important;
+        transform: translateX(3px);
     }
     
-    /* Headers */
+    /* Headers - 부드러운 흰색 */
     h1, h2, h3 {
-        color: #ffffff !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        color: #F1F5F9 !important;
+        text-shadow: none;
     }
     
-    /* Tabs */
+    /* Tabs - 미묘한 배경 */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: rgba(255,255,255,0.1);
+        gap: 6px;
+        background: #1E293B;
         padding: 0.5rem;
-        border-radius: 10px;
+        border-radius: 8px;
     }
     
     .stTabs [data-baseweb="tab"] {
-        background: rgba(255,255,255,0.1);
-        border-radius: 8px;
-        padding: 0.75rem 1.5rem;
-        color: #e0e7ff;
-        font-weight: 600;
+        background: #334155;
+        border-radius: 6px;
+        padding: 0.65rem 1.25rem;
+        color: #CBD5E1;
+        font-weight: 500;
         transition: all 0.3s ease;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(255,255,255,0.2);
-        transform: translateY(-2px);
+        background: #475569;
+        color: #E2E8F0;
     }
     
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: white !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    }
-    
-    /* Cards & Containers */
-    .stMarkdown, .stDataFrame {
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: white;
+        background: #60A5FA;
+        color: #0F172A !important;
         font-weight: 600;
-        padding: 0.75rem 2rem;
+    }
+    
+    /* Cards & Containers - 어두운 카드 */
+    .stMarkdown, .stDataFrame {
+        background: #1E293B;
         border-radius: 8px;
+        padding: 1.25rem;
+        border: 1px solid #334155;
+    }
+    
+    /* Buttons - 차분한 파란색 */
+    .stButton > button {
+        background: #3B82F6;
+        color: white;
+        font-weight: 500;
+        padding: 0.65rem 1.75rem;
+        border-radius: 6px;
         border: none;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        box-shadow: 0 2px 6px rgba(59, 130, 246, 0.2);
         transition: all 0.3s ease;
     }
     
     .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        background: #60A5FA;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
     }
     
-    /* Metrics */
+    /* Metrics - 부드러운 파란색 */
     div[data-testid="stMetricValue"] {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #3b82f6;
+        font-size: 1.75rem;
+        font-weight: 600;
+        color: #60A5FA;
     }
     
-    /* Info boxes */
+    /* Info boxes - 미묘한 배경 */
     .stAlert {
-        border-radius: 12px;
-        border-left: 4px solid #3b82f6;
-        background: rgba(59, 130, 246, 0.1);
+        border-radius: 8px;
+        border-left: 3px solid #60A5FA;
+        background: #1E293B;
+        color: #E2E8F0;
     }
     
-    /* Dataframe */
+    /* Dataframe - 다크 테마 */
     .dataframe {
-        border-radius: 8px;
+        border-radius: 6px;
         overflow: hidden;
+        background: #1E293B;
+    }
+    
+    /* Input fields - 다크 배경 */
+    input, textarea, select {
+        background: #334155 !important;
+        color: #E2E8F0 !important;
+        border: 1px solid #475569 !important;
+    }
+    
+    /* Text color override */
+    p, label, span {
+        color: #CBD5E1;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -455,11 +470,10 @@ def main():
     # Header with logo/brand
     st.markdown("""
         <div style='text-align: center; padding: 1rem 0 2rem 0;'>
-            <h1 style='font-size: 3rem; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                       -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;'>
+            <h1 style='font-size: 2.5rem; margin: 0; color: #F1F5F9; font-weight: 700;'>
                 🏭 AS ERP System
             </h1>
-            <p style='color: #e0e7ff; font-size: 1.1rem; margin-top: 0.5rem;'>
+            <p style='color: #94A3B8; font-size: 1rem; margin-top: 0.5rem;'>
                 Advanced Supply Chain & Resource Planning
             </p>
         </div>

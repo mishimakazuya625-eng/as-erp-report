@@ -1,8 +1,8 @@
 [theme]
-primaryColor = "#3B82F6"  # Modern blue
-backgroundColor = "#0F172A"  # Dark navy
-secondaryBackgroundColor = "#1E293B"  # Lighter navy
-textColor = "#F1F5F9"  # Light gray
+primaryColor = "#60A5FA"  # Soft blue
+backgroundColor = "#0F172A"  # Very dark navy
+secondaryBackgroundColor = "#1E293B"  # Dark slate
+textColor = "#E2E8F0"  # Soft light gray
 font = "sans serif"
 
 [server]
