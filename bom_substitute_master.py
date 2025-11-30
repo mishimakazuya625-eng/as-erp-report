@@ -207,6 +207,10 @@ def show_bom_management():
                         conn = get_db_connection()
                         existing_bom_df = pd.read_sql_query("SELECT PARENT_PN, CHILD_PKID FROM BOM_Master", conn)
                         conn.close()
+                        
+                        # Normalize columns
+                        existing_bom_df.columns = existing_bom_df.columns.str.upper()
+                        
                         existing_bom_set = set(zip(existing_bom_df['PARENT_PN'], existing_bom_df['CHILD_PKID']))
 
                         # 1. Check for Nulls
@@ -431,6 +435,9 @@ def show_bom_management():
                             conn = get_db_connection()
                             existing_df = pd.read_sql_query("SELECT CHILD_PKID, CHILD_PKID_NAME, SUBSTITUTE_PKID, SUBSTITUTE_PKID_NAME, DESCRIPTION FROM Substitute_Master", conn)
                             conn.close()
+                            
+                            # Normalize columns
+                            existing_df.columns = existing_df.columns.str.upper()
                             
                             # Prepare columns for comparison
                             compare_cols = ['CHILD_PKID', 'SUBSTITUTE_PKID']

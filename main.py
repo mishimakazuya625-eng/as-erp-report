@@ -72,6 +72,10 @@ def check_duplicate_pn(pn_list):
     # pd.read_sql_query with psycopg2 connection
     existing_pns = pd.read_sql_query(query, conn, params=tuple(pn_list))
     conn.close()
+    
+    # Normalize columns to uppercase (Postgres returns lowercase)
+    existing_pns.columns = existing_pns.columns.str.upper()
+    
     return existing_pns['PN'].tolist()
 
 def get_valid_plant_sites():
@@ -79,6 +83,8 @@ def get_valid_plant_sites():
     conn = get_db_connection()
     try:
         df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master", conn)
+        # Normalize columns to uppercase
+        df.columns = df.columns.str.upper()
         return set(df['SITE_CODE'].tolist()) if not df.empty else set()
     except:
         # Plant_Site_Master might not exist yet

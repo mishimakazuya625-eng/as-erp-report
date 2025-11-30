@@ -109,6 +109,9 @@ def upsert_orders(csv_df):
     # Load existing orders
     existing_df = pd.read_sql_query("SELECT ORDER_KEY, PN, ORDER_QTY, DELIVERED_QTY, ORDER_STATUS FROM AS_Order", conn)
     
+    # Normalize columns
+    existing_df.columns = existing_df.columns.str.upper()
+    
     # Step 2: UPSERT
     # Identify updates vs inserts
     csv_df['is_update'] = csv_df['ORDER_KEY'].isin(existing_df['ORDER_KEY'])
