@@ -256,39 +256,39 @@ def show_bom_management():
                                 df = df[~unknown_pn_mask]
 
                         if not df.empty:
-                        # Optimize 4. Check for Duplicates
-                        # Only fetch BOM records for the PARENT_PNs in the uploaded file
-                        unique_uploaded_pns = df['PARENT_PN'].unique().tolist()
-                        
-                        if unique_uploaded_pns:
-                            conn = get_db_connection()
-                            # Use parameter substitution for safe query
-                            placeholders = ',' .join(['%s'] * len(unique_uploaded_pns))
-                            query = f"SELECT PARENT_PN, CHILD_PKID FROM BOM_Master WHERE PARENT_PN IN ({placeholders})"
-                            existing_bom_df = pd.read_sql_query(query, conn, params=tuple(unique_uploaded_pns))
-                            conn.close()
+                            # Optimize 4. Check for Duplicates
+                            # Only fetch BOM records for the PARENT_PNs in the uploaded file
+                            unique_uploaded_pns = df['PARENT_PN'].unique().tolist()
                             
-                            # Normalize columns
-                            existing_bom_df.columns = existing_bom_df.columns.str.upper()
-                            # Normalize data
-                            if not existing_bom_df.empty:
-                                existing_bom_df['PARENT_PN'] = existing_bom_df['PARENT_PN'].astype(str).str.strip().str.upper()
-                                existing_bom_df['CHILD_PKID'] = existing_bom_df['CHILD_PKID'].astype(str).str.strip().str.upper()
-                            
-                            existing_bom_set = set(zip(existing_bom_df['PARENT_PN'], existing_bom_df['CHILD_PKID']))
-                        else:
-                            existing_bom_set = set()
+                            if unique_uploaded_pns:
+                                conn = get_db_connection()
+                                # Use parameter substitution for safe query
+                                placeholders = ',' .join(['%s'] * len(unique_uploaded_pns))
+                                query = f"SELECT PARENT_PN, CHILD_PKID FROM BOM_Master WHERE PARENT_PN IN ({placeholders})"
+                                existing_bom_df = pd.read_sql_query(query, conn, params=tuple(unique_uploaded_pns))
+                                conn.close()
+                                
+                                # Normalize columns
+                                existing_bom_df.columns = existing_bom_df.columns.str.upper()
+                                # Normalize data
+                                if not existing_bom_df.empty:
+                                    existing_bom_df['PARENT_PN'] = existing_bom_df['PARENT_PN'].astype(str).str.strip().str.upper()
+                                    existing_bom_df['CHILD_PKID'] = existing_bom_df['CHILD_PKID'].astype(str).str.strip().str.upper()
+                                
+                                existing_bom_set = set(zip(existing_bom_df['PARENT_PN'], existing_bom_df['CHILD_PKID']))
+                            else:
+                                existing_bom_set = set()
 
-                        df['key'] = list(zip(df['PARENT_PN'], df['CHILD_PKID']))
-                        duplicate_mask = df['key'].isin(existing_bom_set)
-                        
-                        if duplicate_mask.any():
-                            duplicate_rows = df[duplicate_mask].copy()
-                            duplicate_rows['Error'] = "BOM relationship already exists"
-                            error_rows.append(duplicate_rows.drop(columns=['key']))
-                            df = df[~duplicate_mask]
-                        
-                        df = df.drop(columns=['key'])
+                            df['key'] = list(zip(df['PARENT_PN'], df['CHILD_PKID']))
+                            duplicate_mask = df['key'].isin(existing_bom_set)
+                            
+                            if duplicate_mask.any():
+                                duplicate_rows = df[duplicate_mask].copy()
+                                duplicate_rows['Error'] = "BOM relationship already exists"
+                                error_rows.append(duplicate_rows.drop(columns=['key']))
+                                df = df[~duplicate_mask]
+                            
+                            df = df.drop(columns=['key'])
 
                         # Show errors
                         if error_rows:
