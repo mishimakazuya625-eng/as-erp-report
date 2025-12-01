@@ -313,6 +313,12 @@ def show_schema_management():
                 # Normalize columns
                 df.columns = df.columns.str.strip().str.upper()
                 
+                # Normalize data
+                if 'PN' in df.columns:
+                    df['PN'] = df['PN'].astype(str).str.strip().str.upper()
+                if 'PLANT_SITE' in df.columns:
+                    df['PLANT_SITE'] = df['PLANT_SITE'].astype(str).str.strip().str.upper()
+                
                 st.write("Preview:", df.head())
                 
                 if st.button("Process Inventory Upload"):

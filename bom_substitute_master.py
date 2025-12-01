@@ -1,12 +1,3 @@
-import streamlit as st
-import pandas as pd
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import io
-from datetime import datetime
-import time
-
-# --- Database Helper Functions ---
 
 def get_db_connection():
     max_retries = 3
@@ -265,17 +256,39 @@ def show_bom_management():
                                 df = df[~unknown_pn_mask]
 
                         if not df.empty:
-                            # 4. Check for Duplicates
-                            df['key'] = list(zip(df['PARENT_PN'], df['CHILD_PKID']))
-                            duplicate_mask = df['key'].isin(existing_bom_set)
+                        # Optimize 4. Check for Duplicates
+                        # Only fetch BOM records for the PARENT_PNs in the uploaded file
+                        unique_uploaded_pns = df['PARENT_PN'].unique().tolist()
+                        
+                        if unique_uploaded_pns:
+                            conn = get_db_connection()
+                            # Use parameter substitution for safe query
+                            placeholders = ',' .join(['%s'] * len(unique_uploaded_pns))
+                            query = f"SELECT PARENT_PN, CHILD_PKID FROM BOM_Master WHERE PARENT_PN IN ({placeholders})"
+                            existing_bom_df = pd.read_sql_query(query, conn, params=tuple(unique_uploaded_pns))
+                            conn.close()
                             
-                            if duplicate_mask.any():
-                                duplicate_rows = df[duplicate_mask].copy()
-                                duplicate_rows['Error'] = "BOM relationship already exists"
-                                error_rows.append(duplicate_rows.drop(columns=['key']))
-                                df = df[~duplicate_mask]
+                            # Normalize columns
+                            existing_bom_df.columns = existing_bom_df.columns.str.upper()
+                            # Normalize data
+                            if not existing_bom_df.empty:
+                                existing_bom_df['PARENT_PN'] = existing_bom_df['PARENT_PN'].astype(str).str.strip().str.upper()
+                                existing_bom_df['CHILD_PKID'] = existing_bom_df['CHILD_PKID'].astype(str).str.strip().str.upper()
                             
-                            df = df.drop(columns=['key'])
+                            existing_bom_set = set(zip(existing_bom_df['PARENT_PN'], existing_bom_df['CHILD_PKID']))
+                        else:
+                            existing_bom_set = set()
+
+                        df['key'] = list(zip(df['PARENT_PN'], df['CHILD_PKID']))
+                        duplicate_mask = df['key'].isin(existing_bom_set)
+                        
+                        if duplicate_mask.any():
+                            duplicate_rows = df[duplicate_mask].copy()
+                            duplicate_rows['Error'] = "BOM relationship already exists"
+                            error_rows.append(duplicate_rows.drop(columns=['key']))
+                            df = df[~duplicate_mask]
+                        
+                        df = df.drop(columns=['key'])
 
                         # Show errors
                         if error_rows:
@@ -297,11 +310,13 @@ def show_bom_management():
                             try:
                                 cols_to_insert = ['PARENT_PN', 'CHILD_PKID', 'BOM_QTY']
                                 
-                                # Use executemany for batch insert
+                                # Use execute_values for fast batch insert
                                 cursor = conn.cursor()
                                 data_tuples = [tuple(x) for x in df[cols_to_insert].to_numpy()]
-                                query = "INSERT INTO BOM_Master (PARENT_PN, CHILD_PKID, BOM_QTY) VALUES (%s, %s, %s)"
-                                cursor.executemany(query, data_tuples)
+                                
+                                query = "INSERT INTO BOM_Master (PARENT_PN, CHILD_PKID, BOM_QTY) VALUES %s"
+                                execute_values(cursor, query, data_tuples)
+                                
                                 conn.commit()
                                 st.success(f"Successfully uploaded {len(df)} BOM records.")
                             except Exception as e:
@@ -445,6 +460,12 @@ def show_bom_management():
                     
                     # Normalize columns
                     df.columns = df.columns.str.strip().str.upper()
+                    
+                    # Normalize data
+                    if 'CHILD_PKID' in df.columns:
+                        df['CHILD_PKID'] = df['CHILD_PKID'].astype(str).str.strip().str.upper()
+                    if 'SUBSTITUTE_PKID' in df.columns:
+                        df['SUBSTITUTE_PKID'] = df['SUBSTITUTE_PKID'].astype(str).str.strip().str.upper()
                     
                     required_cols = {'CHILD_PKID', 'SUBSTITUTE_PKID'}
                     if not required_cols.issubset(df.columns):

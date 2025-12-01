@@ -178,6 +178,11 @@ def show_product_master():
                 # Normalize column names: uppercase and strip whitespace
                 df.columns = df.columns.str.strip().str.upper()
                 
+                # Normalize data
+                for col in ['PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE']:
+                    if col in df.columns:
+                        df[col] = df[col].astype(str).str.strip().str.upper()
+                
                 # 1. Integrity Check: Required Columns
                 required_columns = {'PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE'}
                 if not required_columns.issubset(df.columns):

@@ -233,6 +233,12 @@ def show_order_management():
                 # Normalize columns
                 df.columns = df.columns.str.strip().str.upper()
                 
+                # Normalize data
+                if 'ORDER_KEY' in df.columns:
+                    df['ORDER_KEY'] = df['ORDER_KEY'].astype(str).str.strip().str.upper()
+                if 'PN' in df.columns:
+                    df['PN'] = df['PN'].astype(str).str.strip().str.upper()
+                
                 # Check required columns
                 required_cols = {'ORDER_KEY', 'PN', 'ORDER_QTY', 'DELIVERED_QTY', 'ORDER_DATE'}
                 if not required_cols.issubset(df.columns):
