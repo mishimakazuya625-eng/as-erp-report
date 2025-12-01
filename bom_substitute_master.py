@@ -69,6 +69,9 @@ def get_all_product_pns():
     conn.close()
     # Normalize columns to uppercase
     df.columns = df.columns.str.upper()
+    # Normalize data
+    if not df.empty:
+        df['PN'] = df['PN'].astype(str).str.strip().str.upper()
     return set(df['PN'].tolist())
 
 # ===== BOM Functions =====
@@ -202,6 +205,12 @@ def show_bom_management():
                     
                     # Normalize columns
                     df.columns = df.columns.str.strip().str.upper()
+                    
+                    # Normalize data
+                    if 'PARENT_PN' in df.columns:
+                        df['PARENT_PN'] = df['PARENT_PN'].astype(str).str.strip().str.upper()
+                    if 'CHILD_PKID' in df.columns:
+                        df['CHILD_PKID'] = df['CHILD_PKID'].astype(str).str.strip().str.upper()
                     
                     required_cols = {'PARENT_PN', 'CHILD_PKID', 'BOM_QTY'}
                     if not required_cols.issubset(df.columns):
