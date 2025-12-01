@@ -304,7 +304,75 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
     
     r2_report = r2_report[final_cols]
     
-    return r1_report, r2_report, None
+    # --- Step 6: Generate R3 Report (Production Feasibility) ---
+    # R3: PN, PART_NAME, CUSTOMER, PLANT_SITE, 생산가능수량, 제한부품, 부품현황
+    
+    # For each product, calculate how many units can be produced with current inventory
+    r3_rows = []
+    
+    for _, product in products.iterrows():
+        pn = product['PN']
+        part_name = product['PART_NAME']
+        customer = product['CUSTOMER']
+        plant_site = product['PLANT_SITE']
+        
+        # Get BOM for this product
+        product_bom = bom[bom['PARENT_PN'] == pn]
+        
+        if product_bom.empty:
+            # No BOM = can't produce
+            continue
+        
+        # For each component, check inventory at this site
+        min_producible = float('inf')
+        limiting_component = ''
+        component_details = []
+        
+        for _, bom_row in product_bom.iterrows():
+            child_pkid = bom_row['CHILD_PKID']
+            bom_qty = bom_row['BOM_QTY']
+            
+            # Get inventory for this component at this site
+            comp_inv = inventory[(inventory['PKID'] == child_pkid) & (inventory['PLANT_SITE'] == plant_site)]
+            
+            if comp_inv.empty:
+                available_qty = 0
+            else:
+                available_qty = comp_inv['PKID_QTY'].sum()
+            
+            # Calculate how many products can be made with this component
+            if bom_qty > 0:
+                producible_with_this_comp = int(available_qty / bom_qty)
+            else:
+                producible_with_this_comp = 0
+            
+            # Track the minimum
+            if producible_with_this_comp < min_producible:
+                min_producible = producible_with_this_comp
+                limiting_component = child_pkid
+            
+            # Component status detail
+            component_details.append(f"{child_pkid}: {available_qty}/{bom_qty}")
+        
+        # Only include if producible quantity > 0
+        if min_producible > 0 and min_producible != float('inf'):
+            r3_rows.append({
+                'PN': pn,
+                'PART_NAME': part_name,
+                'CUSTOMER': customer,
+                'PLANT_SITE': plant_site,
+                '생산가능수량': min_producible,
+                '제한부품': limiting_component,
+                '부품현황': ' | '.join(component_details)
+            })
+    
+    r3_report = pd.DataFrame(r3_rows)
+    
+    # Sort by producible quantity descending
+    if not r3_report.empty:
+        r3_report = r3_report.sort_values('생산가능수량', ascending=False).reset_index(drop=True)
+    
+    return r1_report, r2_report, r3_report, None
 
 def show_shortage_analysis():
     st.title("🚨 결품 분석 리포트 (Shortage Analysis)")
@@ -334,6 +402,8 @@ def show_shortage_analysis():
         st.session_state['sa_r1'] = None
     if 'sa_r2' not in st.session_state:
         st.session_state['sa_r2'] = None
+    if 'sa_r3' not in st.session_state:
+        st.session_state['sa_r3'] = None
     if 'sa_error' not in st.session_state:
         st.session_state['sa_error'] = None
     if 'sa_done' not in st.session_state:
@@ -345,10 +415,11 @@ def show_shortage_analysis():
             st.error("주문 상태를 최소 하나 이상 선택해주세요.")
         else:
             with st.spinner("데이터 로딩 및 분석 중... (Pre-Filtering Applied)"):
-                r1, r2, error = perform_shortage_analysis(sel_customers, sel_sites, sel_statuses)
+                r1, r2, r3, error = perform_shortage_analysis(sel_customers, sel_sites, sel_statuses)
                 
                 st.session_state['sa_r1'] = r1
                 st.session_state['sa_r2'] = r2
+                st.session_state['sa_r3'] = r3
                 st.session_state['sa_error'] = error
                 st.session_state['sa_done'] = True
                 st.rerun()
@@ -358,6 +429,7 @@ def show_shortage_analysis():
         st.divider()
         r1 = st.session_state['sa_r1']
         r2 = st.session_state['sa_r2']
+        r3 = st.session_state['sa_r3']
         error = st.session_state['sa_error']
         
         if error:
@@ -385,3 +457,15 @@ def show_shortage_analysis():
                 st.download_button("📥 R2 다운로드 (CSV)", csv_r2, f"R2_Shortage_Detail_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
             else:
                 st.info("조건에 맞는 결품 데이터가 없습니다.")
+            
+            st.divider()
+            
+            # R3 Report
+            st.subheader("R3. 생산가능 제품 (Production Feasible Items)")
+            if r3 is not None and not r3.empty:
+                st.success(f"✅ 총 {len(r3)}개 제품이 현재 재고로 생산 가능합니다.")
+                st.dataframe(r3, use_container_width=True)
+                csv_r3 = r3.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 R3 다운로드 (CSV)", csv_r3, f"R3_Production_Feasible_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            else:
+                st.info("현재 재고로 생산 가능한 제품이 없습니다.")
