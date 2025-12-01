@@ -31,6 +31,10 @@ def get_db_connection():
             st.error("Database URL not found in secrets.")
             st.stop()
 
+def get_filter_options():
+    conn = get_db_connection()
+    conn.close()
+
 
 def perform_shortage_analysis(target_customers, target_sites, target_statuses):
     """
