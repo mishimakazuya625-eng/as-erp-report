@@ -173,8 +173,12 @@ def show_bom_management():
     init_bom_db()
     init_substitute_db()
 
-    # Main tabs for BOM and Substitute
-    main_tab1, main_tab2 = st.tabs(["📋 자재 명세서 (BOM Master)", "🔄 대체 자재 (Substitute Master)"])
+    # Main tabs for BOM, Substitute, and Unregistered
+    main_tab1, main_tab2, main_tab3 = st.tabs([
+        "📋 자재 명세서 (BOM Master)", 
+        "🔄 대체 자재 (Substitute Master)",
+        "🔍 BOM 미등록 품번"
+    ])
 
     # ========== BOM MASTER TAB ==========
     with main_tab1:
@@ -644,3 +648,46 @@ def show_bom_management():
                 st.info("No substitute records found.")
                 if not search_term:
                     st.caption("Showing top 100 records.")
+    
+    # ========== BOM UNREGISTERED ITEMS TAB ==========
+    with main_tab3:
+        st.header("BOM 미등록 품번")
+        st.info("Product Master에는 등록되어 있지만 BOM Master에 Parent PN으로 등록되지 않은 품번을 표시합니다.")
+        
+        conn = get_db_connection()
+        all_products = pd.read_sql_query("SELECT PN, PART_NAME, CUSTOMER, PLANT_SITE FROM Product_Master", conn)
+        all_products.columns = all_products.columns.str.upper()
+        registered_bom = pd.read_sql_query("SELECT DISTINCT PARENT_PN FROM BOM_Master", conn)
+        registered_bom.columns = registered_bom.columns.str.upper()
+        conn.close()
+        
+        if not all_products.empty and not registered_bom.empty:
+            registered_pn_set = set(registered_bom['PARENT_PN'].tolist())
+            unregistered_items = all_products[~all_products['PN'].isin(registered_pn_set)].copy()
+        elif all_products.empty:
+            unregistered_items = pd.DataFrame()
+        else:
+            unregistered_items = all_products.copy()
+        
+        if not unregistered_items.empty:
+            st.success(f"총 {len(unregistered_items)}개의 BOM 미등록 품번이 발견되었습니다.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                filter_customer = st.multiselect("고객사 필터", options=sorted(unregistered_items['CUSTOMER'].unique().tolist()))
+            with col2:
+                filter_site = st.multiselect("생산처 필터", options=sorted(unregistered_items['PLANT_SITE'].unique().tolist()))
+            
+            filtered_items = unregistered_items.copy()
+            if filter_customer:
+                filtered_items = filtered_items[filtered_items['CUSTOMER'].isin(filter_customer)]
+            if filter_site:
+                filtered_items = filtered_items[filtered_items['PLANT_SITE'].isin(filter_site)]
+            
+            st.dataframe(filtered_items, use_container_width=True)
+            st.write(f"필터링 결과: {len(filtered_items)}개 품번")
+            
+            csv = filtered_items.to_csv(index=False).encode('utf-8')
+            st.download_button(label="CSV 다운로드", data=csv, file_name=f'bom_unregistered_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', mime='text/csv')
+        else:
+            st.success("모든 Product Master 품번이 BOM에 등록되어 있습니다!")
