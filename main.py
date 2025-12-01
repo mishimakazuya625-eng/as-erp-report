@@ -203,8 +203,17 @@ def show_product_master():
                                 st.dataframe(invalid_sites_df[['PN', 'PLANT_SITE']])
                                 df = df[~invalid_site_mask]
                         
-                        # 4. Duplicate Handling
-                        unique_pns = df['PN'].unique().tolist()
+                        # 4. Filter out header rows (where PN equals 'PN' or 'pn')
+                        header_mask = df['PN'].astype(str).str.upper() == 'PN'
+                        if header_mask.any():
+                            st.warning(f"Filtering out {header_mask.sum()} header rows from CSV.")
+                            df = df[~header_mask]
+                        
+                        # 5. Duplicate Handling
+                        if df.empty:
+                            st.warning("No valid data to process after filtering.")
+                        else:
+                            unique_pns = df['PN'].unique().tolist()
                         duplicates_in_db = check_duplicate_pn(unique_pns)
                         
                         if duplicates_in_db:

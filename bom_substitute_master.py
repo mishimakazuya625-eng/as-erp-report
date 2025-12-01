@@ -222,6 +222,13 @@ def show_bom_management():
                             error_rows.append(null_rows)
                             df = df.dropna(subset=list(required_cols))
 
+                        # 1.5. Filter out header rows
+                        if not df.empty:
+                            header_mask = df['PARENT_PN'].astype(str).str.upper() == 'PARENT_PN'
+                            if header_mask.any():
+                                st.warning(f"Filtering out {header_mask.sum()} header rows from CSV.")
+                                df = df[~header_mask]
+
                         if not df.empty:
                             # 2. Validate BOM_QTY
                             df['BOM_QTY_NUM'] = pd.to_numeric(df['BOM_QTY'], errors='coerce')
@@ -438,6 +445,13 @@ def show_bom_management():
                             null_rows['Error'] = "Null values in required columns"
                             error_rows.append(null_rows)
                             df = df.dropna(subset=list(required_cols))
+
+                        # 1.5. Filter out header rows
+                        if not df.empty:
+                            header_mask = df['CHILD_PKID'].astype(str).str.upper() == 'CHILD_PKID'
+                            if header_mask.any():
+                                st.warning(f"Filtering out {header_mask.sum()} header rows from CSV.")
+                                df = df[~header_mask]
 
                         if not df.empty:
                             # 2. Relaxed Duplicate Check - ONLY exact row matches

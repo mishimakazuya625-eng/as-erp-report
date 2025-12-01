@@ -226,6 +226,8 @@ def show_schema_management():
             if submitted:
                 if not site_code:
                     st.error("Site Code is required")
+                elif site_code.upper() in ['SITE_CODE', 'SITE CODE']:
+                    st.error("Invalid Site Code: Cannot use 'site_code' as a site code.")
                 else:
                     # Create a single-row DataFrame for UPSERT
                     new_site_df = pd.DataFrame([{
