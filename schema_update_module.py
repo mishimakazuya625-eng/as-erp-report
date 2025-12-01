@@ -113,6 +113,8 @@ def process_inventory_upload(df, snapshot_date):
     conn = get_db_connection()
     valid_sites_df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master", conn)
     conn.close()
+    # Normalize columns
+    valid_sites_df.columns = valid_sites_df.columns.str.upper()
     valid_sites = set(valid_sites_df['SITE_CODE'].tolist())
     
     # Filter columns that match valid sites
@@ -159,11 +161,11 @@ def get_inventory_comparison():
     # Get distinct top 4 dates
     dates_df = pd.read_sql_query("SELECT DISTINCT SNAPSHOT_DATE FROM Inventory_Master ORDER BY SNAPSHOT_DATE DESC LIMIT 4", conn)
     
-    # PostgreSQL returns lowercase column names
+    # Normalize columns
+    dates_df.columns = dates_df.columns.str.upper()
+    
     if not dates_df.empty:
-        # Try both cases for compatibility
-        date_col = 'snapshot_date' if 'snapshot_date' in dates_df.columns else 'SNAPSHOT_DATE'
-        dates = dates_df[date_col].tolist()
+        dates = dates_df['SNAPSHOT_DATE'].tolist()
     else:
         dates = []
     
@@ -185,14 +187,11 @@ def get_inventory_comparison():
     if df.empty:
         return pd.DataFrame()
     
-    # Handle column name case
-    snapshot_col = 'snapshot_date' if 'snapshot_date' in df.columns else 'SNAPSHOT_DATE'
-    pkid_col = 'pkid' if 'pkid' in df.columns else 'PKID'
-    site_col = 'plant_site' if 'plant_site' in df.columns else 'PLANT_SITE'
-    qty_col = 'pkid_qty' if 'pkid_qty' in df.columns else 'PKID_QTY'
+    # Normalize columns
+    df.columns = df.columns.str.upper()
     
     # Pivot: Index=[PKID, PLANT_SITE], Columns=SNAPSHOT_DATE, Values=PKID_QTY
-    pivot_df = df.pivot_table(index=[pkid_col, site_col], columns=snapshot_col, values=qty_col, fill_value=0)
+    pivot_df = df.pivot_table(index=['PKID', 'PLANT_SITE'], columns='SNAPSHOT_DATE', values='PKID_QTY', fill_value=0)
     
     # Sort columns descending (Newest first)
     pivot_df = pivot_df.sort_index(axis=1, ascending=False)

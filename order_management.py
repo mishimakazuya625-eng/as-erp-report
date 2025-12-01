@@ -305,6 +305,9 @@ def show_order_management():
                 order = pd.read_sql_query("SELECT * FROM AS_Order WHERE ORDER_KEY = %s", conn, params=(order_key,))
                 conn.close()
                 
+                # Normalize columns
+                order.columns = order.columns.str.upper()
+                
                 if not order.empty:
                     st.session_state['update_order'] = order.iloc[0].to_dict()
                 else:
@@ -375,6 +378,9 @@ def show_order_management():
         
         df = pd.read_sql_query(query, conn, params=params if params else None)
         conn.close()
+        
+        # Normalize columns
+        df.columns = df.columns.str.upper()
         
         if not df.empty:
             st.dataframe(df, use_container_width=True)

@@ -336,6 +336,9 @@ def show_bom_management():
                     record = pd.read_sql_query("SELECT * FROM BOM_Master WHERE PARENT_PN = %s AND CHILD_PKID = %s", conn, params=(u_parent, u_child))
                     conn.close()
                     
+                    # Normalize columns
+                    record.columns = record.columns.str.upper()
+                    
                     if not record.empty:
                         st.session_state['update_bom_record'] = record.iloc[0].to_dict()
                     else:
@@ -382,6 +385,9 @@ def show_bom_management():
                 df = pd.read_sql_query(query, conn, params=(f"%{search_pn}%",))
                 conn.close()
                 
+                # Normalize columns
+                df.columns = df.columns.str.upper()
+                
                 if not df.empty:
                     st.dataframe(df, use_container_width=True)
                     st.write(f"Total Components: {len(df)}")
@@ -391,6 +397,8 @@ def show_bom_management():
                 conn = get_db_connection()
                 df = pd.read_sql_query("SELECT * FROM BOM_Master LIMIT 100", conn)
                 conn.close()
+                # Normalize columns
+                df.columns = df.columns.str.upper()
                 st.dataframe(df, use_container_width=True)
                 st.caption("Showing top 100 records.")
 
@@ -558,6 +566,9 @@ def show_bom_management():
                     record = pd.read_sql_query("SELECT * FROM Substitute_Master WHERE SUB_ID = %s", conn, params=(sub_id,))
                     conn.close()
                     
+                    # Normalize columns
+                    record.columns = record.columns.str.upper()
+                    
                     if not record.empty:
                         st.session_state['update_sub_record'] = record.iloc[0].to_dict()
                     else:
@@ -608,6 +619,9 @@ def show_bom_management():
             else:
                 df = pd.read_sql_query("SELECT * FROM Substitute_Master LIMIT 100", conn)
             conn.close()
+            
+            # Normalize columns
+            df.columns = df.columns.str.upper()
             
             if not df.empty:
                 st.dataframe(df, use_container_width=True)

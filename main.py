@@ -281,6 +281,9 @@ def show_product_master():
                 product = pd.read_sql_query("SELECT * FROM Product_Master WHERE PN = %s", conn, params=(pn_to_update,))
                 conn.close()
                 
+                # Normalize columns
+                product.columns = product.columns.str.upper()
+                
                 if not product.empty:
                     current_data = product.iloc[0]
                     with st.form("update_form"):
