@@ -21,7 +21,7 @@ def get_db_connection():
                 db_url += '?sslmode=require'
             elif 'sslmode' not in db_url:
                 db_url += '&sslmode=require'
-            conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+            conn = psycopg2.connect(db_url)
             return conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
             if attempt < max_retries - 1:
