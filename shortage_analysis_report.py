@@ -38,6 +38,25 @@ def get_filter_options():
     df.columns=df.columns.str.upper()
 
 
+def get_filter_options():
+    """Get available customers and plant sites from Product_Master for filtering"""
+    conn = get_db_connection()
+    try:
+        query = "SELECT DISTINCT CUSTOMER, PLANT_SITE FROM Product_Master ORDER BY CUSTOMER, PLANT_SITE"
+        df = pd.read_sql_query(query, conn)
+        df.columns = df.columns.str.upper()
+        
+        customers = sorted(df['CUSTOMER'].dropna().unique().tolist())
+        sites = sorted(df['PLANT_SITE'].dropna().unique().tolist())
+        
+        return customers, sites
+    except Exception as e:
+        st.error(f"Error loading filter options: {e}")
+        return [], []
+    finally:
+        conn.close()
+
+
 def perform_shortage_analysis(target_customers, target_sites, target_statuses):
     """
     Core Logic with Pre-Filtering

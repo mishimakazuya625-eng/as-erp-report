@@ -317,15 +317,26 @@ def show_bom_management():
                             try:
                                 cols_to_insert = ['PARENT_PN', 'CHILD_PKID', 'BOM_QTY']
                                 
-                                # Use execute_values for fast batch insert
+                                # Use execute_values for fast batch insert with chunking
                                 cursor = conn.cursor()
                                 data_tuples = [tuple(x) for x in df[cols_to_insert].to_numpy()]
                                 
                                 query = "INSERT INTO BOM_Master (PARENT_PN, CHILD_PKID, BOM_QTY) VALUES %s"
-                                execute_values(cursor, query, data_tuples)
                                 
-                                conn.commit()
-                                st.success(f"Successfully uploaded {len(df)} BOM records.")
+                                chunk_size = 1000
+                                total_inserted = 0
+                                progress_text = "Uploading data in chunks..."
+                                my_bar = st.progress(0, text=progress_text)
+                                
+                                for i in range(0, len(data_tuples), chunk_size):
+                                    chunk = data_tuples[i:i + chunk_size]
+                                    execute_values(cursor, query, chunk)
+                                    conn.commit() # Commit each chunk to prevent transaction timeout
+                                    total_inserted += len(chunk)
+                                    my_bar.progress(min(total_inserted / len(data_tuples), 1.0), text=f"Uploaded {total_inserted}/{len(data_tuples)} records")
+                                
+                                my_bar.empty()
+                                st.success(f"Successfully uploaded {total_inserted} BOM records.")
                             except Exception as e:
                                 conn.rollback()
                                 st.error(f"Database Insertion Error: {e}")
