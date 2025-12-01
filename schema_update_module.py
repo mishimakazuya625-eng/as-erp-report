@@ -212,47 +212,79 @@ def show_schema_management():
     with tab1:
         st.header("Plant Site Master")
         
-        # Upload
-        uploaded_file = st.file_uploader("Upload Plant Site CSV", type=['csv'])
-        if uploaded_file:
-            try:
-                # Robust CSV Loading
-                try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
-                except UnicodeDecodeError:
-                    uploaded_file.seek(0)
-                    df = pd.read_csv(uploaded_file, encoding='cp949')
-                
-                # Normalize columns
-                df.columns = df.columns.str.strip().str.upper()
-                
-                if 'SITE_CODE' not in df.columns:
-                    st.error("CSV must have 'SITE_CODE' column.")
+        # Add New Site Form
+        st.subheader("➕ Add New Plant Site")
+        with st.form("add_plant_site_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                site_code = st.text_input("Site Code (Required)", placeholder="e.g., DEY, VINA")
+            with col2:
+                site_name = st.text_input("Site Name (Optional)", placeholder="e.g., Daeyang")
+            with col3:
+                region = st.text_input("Region (Optional)", placeholder="e.g., Korea")
+            
+            submitted = st.form_submit_button("Add Plant Site")
+            if submitted:
+                if not site_code:
+                    st.error("Site Code is required")
                 else:
-                    if st.button("Upload Sites"):
-                        success, msg = upsert_plant_sites(df)
-                        if success:
-                            st.success(msg)
-                        else:
-                            st.error(msg)
-            except Exception as e:
-                st.error(f"Error processing CSV: {e}")
+                    # Create a single-row DataFrame for UPSERT
+                    new_site_df = pd.DataFrame([{
+                        'SITE_CODE': site_code,
+                        'SITE_NAME': site_name if site_name else None,
+                        'REGION': region if region else None
+                    }])
+                    success, msg = upsert_plant_sites(new_site_df)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        
+        st.divider()
         
         # View & Delete
+        st.subheader("📋 Current Plant Sites")
         conn = get_db_connection()
         sites_df = pd.read_sql_query("SELECT * FROM Plant_Site_Master", conn)
         conn.close()
         
-        st.dataframe(sites_df, use_container_width=True)
+        # Normalize columns to uppercase
+        sites_df.columns = sites_df.columns.str.upper()
         
-        with st.expander("Delete Site"):
-            site_to_delete = st.selectbox("Select Site to Delete", sites_df['SITE_CODE'].tolist() if not sites_df.empty else [])
-            if st.button("Delete Selected Site"):
-                if delete_plant_site(site_to_delete):
-                    st.success(f"Deleted {site_to_delete}")
-                    st.rerun()
-                else:
-                    st.error("Failed to delete")
+        if not sites_df.empty:
+            st.dataframe(sites_df, use_container_width=True)
+            
+            # Check for invalid header rows
+            header_rows = sites_df[sites_df['SITE_CODE'].astype(str).str.upper() == 'SITE_CODE']
+            if not header_rows.empty:
+                st.warning(f"Found {len(header_rows)} invalid header rows (SITE_CODE='site_code').")
+                if st.button("Delete Invalid Header Rows", key="delete_site_headers"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute("DELETE FROM Plant_Site_Master WHERE UPPER(SITE_CODE) = 'SITE_CODE'")
+                        conn.commit()
+                        st.success("Deleted invalid rows. Refreshing...")
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Failed to delete: {e}")
+                    finally:
+                        conn.close()
+            
+            with st.expander("🗑️ Delete Site"):
+                site_to_delete = st.selectbox("Select Site to Delete", sites_df['SITE_CODE'].tolist())
+                if st.button("Delete Selected Site"):
+                    success, msg = delete_plant_site(site_to_delete)
+                    if success:
+                        st.success(f"Deleted {site_to_delete}")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to delete: {msg}")
+        else:
+            st.info("No plant sites registered yet. Add your first site above.")
+
 
     # --- Tab 2: Inventory Upload ---
     with tab2:
