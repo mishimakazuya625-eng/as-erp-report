@@ -57,6 +57,69 @@ def get_filter_options():
         conn.close()
 
 
+def load_data(target_customers, target_sites, target_statuses):
+    """
+    Load all required data for shortage analysis with pre-filtering
+    Returns: orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites
+    """
+    conn = get_db_connection()
+    
+    try:
+        # Build filter conditions
+        customer_filter = "(" + ",".join([f"'{c}'" for c in target_customers]) + ")" if target_customers else "('')"
+        site_filter = "(" + ",".join([f"'{s}'" for s in target_sites]) + ")" if target_sites else "('')"
+        status_filter = "(" + ",".join([f"'{s}'" for s in target_statuses]) + ")" if target_statuses else "('')"
+        
+        # Load Orders (filtered by status)
+        orders_query = f"""
+            SELECT ORDER_KEY, PN, ORDER_QTY, DELIVERED_QTY, ORDER_DATE, ORDER_STATUS, URGENT_FLAG
+            FROM AS_Order
+            WHERE ORDER_STATUS IN {status_filter}
+        """
+        orders = pd.read_sql_query(orders_query, conn)
+        orders.columns = orders.columns.str.upper()
+        
+        # Load Products (filtered by customer/site)
+        products_query = f"""
+            SELECT PN, PART_NAME, CUSTOMER, PLANT_SITE
+            FROM Product_Master
+            WHERE CUSTOMER IN {customer_filter} AND PLANT_SITE IN {site_filter}
+        """
+        products = pd.read_sql_query(products_query, conn)
+        products.columns = products.columns.str.upper()
+        
+        # Load BOM (all)
+        bom_query = "SELECT PARENT_PN, CHILD_PKID, BOM_QTY FROM BOM_Master"
+        bom = pd.read_sql_query(bom_query, conn)
+        bom.columns = bom.columns.str.upper()
+        
+        # Load Inventory (latest snapshot)
+        inv_query = """
+            SELECT PKID, PLANT_SITE, PKID_QTY, SNAPSHOT_DATE
+            FROM Inventory_Master
+            WHERE SNAPSHOT_DATE = (SELECT MAX(SNAPSHOT_DATE) FROM Inventory_Master)
+        """
+        inventory = pd.read_sql_query(inv_query, conn)
+        inventory.columns = inventory.columns.str.upper()
+        snapshot_date = inventory['SNAPSHOT_DATE'].iloc[0] if not inventory.empty else None
+        
+        # Load Substitutes (all)
+        sub_query = "SELECT CHILD_PKID, SUBSTITUTE_PKID, DESCRIPTION FROM Substitute_Master"
+        substitutes = pd.read_sql_query(sub_query, conn)
+        substitutes.columns = substitutes.columns.str.upper()
+        
+        # Get all plant sites from products
+        all_plant_sites = sorted(products['PLANT_SITE'].unique().tolist()) if not products.empty else []
+        
+        return orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites
+        
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), None, []
+    finally:
+        conn.close()
+
+
 def perform_shortage_analysis(target_customers, target_sites, target_statuses):
     """
     Core Logic with Pre-Filtering
