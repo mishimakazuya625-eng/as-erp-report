@@ -67,6 +67,8 @@ def get_all_product_pns():
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT PN FROM Product_Master", conn)
     conn.close()
+    # Normalize columns to uppercase
+    df.columns = df.columns.str.upper()
     return set(df['PN'].tolist())
 
 # ===== BOM Functions =====
