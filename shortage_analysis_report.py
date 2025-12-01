@@ -33,7 +33,9 @@ def get_db_connection():
 
 def get_filter_options():
     conn = get_db_connection()
+    df=pd.read_sql_query("SELECT SITE_CODE FROM PLANT_SITE_MASTER",conn)
     conn.close()
+    df.columns=df.columns.str.upper()
 
 
 def perform_shortage_analysis(target_customers, target_sites, target_statuses):
