@@ -460,12 +460,3 @@ def show_shortage_analysis():
             
             st.divider()
             
-            # R3 Report
-            st.subheader("R3. 생산가능 제품 (Production Feasible Items)")
-            if r3 is not None and not r3.empty:
-                st.success(f"✅ 총 {len(r3)}개 제품이 현재 재고로 생산 가능합니다.")
-                st.dataframe(r3, use_container_width=True)
-                csv_r3 = r3.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 R3 다운로드 (CSV)", csv_r3, f"R3_Production_Feasible_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-            else:
-                st.info("현재 재고로 생산 가능한 제품이 없습니다.")
