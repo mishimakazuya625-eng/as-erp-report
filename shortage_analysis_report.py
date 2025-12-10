@@ -3,10 +3,9 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
+import time
 
 # --- Database Helper Functions ---
-# --- Database Helper Functions ---
-import time
 
 def get_db_connection():
     max_retries = 3
@@ -15,7 +14,6 @@ def get_db_connection():
     for attempt in range(max_retries):
         try:
             db_url = st.secrets["db_url"]
-            # Add SSL mode if not present
             if '?' not in db_url:
                 db_url += '?sslmode=require'
             elif 'sslmode' not in db_url:
@@ -30,13 +28,6 @@ def get_db_connection():
         except KeyError:
             st.error("Database URL not found in secrets.")
             st.stop()
-
-def get_filter_options():
-    conn = get_db_connection()
-    df=pd.read_sql_query("SELECT SITE_CODE FROM PLANT_SITE_MASTER",conn)
-    conn.close()
-    df.columns=df.columns.str.upper()
-
 
 def get_filter_options():
     """Get available customers and plant sites from Product_Master for filtering"""
@@ -60,7 +51,6 @@ def get_filter_options():
 def load_data(target_customers, target_sites, target_statuses):
     """
     Load all required data for shortage analysis with pre-filtering
-    Returns: orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites
     """
     conn = get_db_connection()
     
@@ -79,7 +69,7 @@ def load_data(target_customers, target_sites, target_statuses):
         orders = pd.read_sql_query(orders_query, conn)
         orders.columns = orders.columns.str.upper()
         
-        # Load Products (filtered by customer/site)
+        # Load Products
         products_query = f"""
             SELECT PN, PART_NAME, CUSTOMER, PLANT_SITE
             FROM Product_Master
@@ -88,12 +78,12 @@ def load_data(target_customers, target_sites, target_statuses):
         products = pd.read_sql_query(products_query, conn)
         products.columns = products.columns.str.upper()
         
-        # Load BOM (all)
+        # Load BOM
         bom_query = "SELECT PARENT_PN, CHILD_PKID, BOM_QTY FROM BOM_Master"
         bom = pd.read_sql_query(bom_query, conn)
         bom.columns = bom.columns.str.upper()
         
-        # Load Inventory (latest snapshot)
+        # Load Inventory
         inv_query = """
             SELECT PKID, PLANT_SITE, PKID_QTY, SNAPSHOT_DATE
             FROM Inventory_Master
@@ -103,12 +93,12 @@ def load_data(target_customers, target_sites, target_statuses):
         inventory.columns = inventory.columns.str.upper()
         snapshot_date = inventory['SNAPSHOT_DATE'].iloc[0] if not inventory.empty else None
         
-        # Load Substitutes (all)
+        # Load Substitutes
         sub_query = "SELECT CHILD_PKID, SUBSTITUTE_PKID, DESCRIPTION FROM Substitute_Master"
         substitutes = pd.read_sql_query(sub_query, conn)
         substitutes.columns = substitutes.columns.str.upper()
         
-        # Get all plant sites from products
+        # Get all plant sites
         all_plant_sites = sorted(products['PLANT_SITE'].unique().tolist()) if not products.empty else []
         
         return orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites
@@ -122,44 +112,43 @@ def load_data(target_customers, target_sites, target_statuses):
 
 def perform_shortage_analysis(target_customers, target_sites, target_statuses):
     """
-    Core Logic with Pre-Filtering
+    Core Logic with Pre-Filtering and Corrected Aggregation
     """
     orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites = load_data(target_customers, target_sites, target_statuses)
     
     if orders.empty:
-        return None, None, "No orders found matching the status criteria."
+        return None, None, None, "No orders found matching the status criteria."
     if products.empty:
-        return None, None, "No products found matching the customer/site criteria."
+        return None, None, None, "No products found matching the customer/site criteria."
     
     # --- Step 1: Prepare Demand Data ---
     
-    # Join Orders with Product Info (Inner Join applies Product filters to Orders)
+    # Join Orders with Product Info
     order_details = orders.merge(products, on='PN', how='inner')
     
     if order_details.empty:
-        return None, None, "No matching orders found for the selected customers/sites."
+        return None, None, None, "No matching orders found for the selected customers/sites."
     
-    # Calculate Remaining Qty
+    # Calculate Remaining Qty per Order
     order_details['REMAINING_QTY'] = order_details['ORDER_QTY'] - order_details['DELIVERED_QTY']
     order_details['REMAINING_QTY'] = order_details['REMAINING_QTY'].clip(lower=0)
     
-    # Explode BOM
+    # Explode BOM (Creates duplication of orders per component)
     exploded = order_details.merge(bom, left_on='PN', right_on='PARENT_PN', how='inner')
     
     if exploded.empty:
-        return None, None, "No BOM data found for the selected products."
+        return None, None, None, "No BOM data found for the selected products."
     
     # Calculate Component Demand
     exploded['REQUIRED_QTY'] = exploded['REMAINING_QTY'] * exploded['BOM_QTY']
     
     # --- Step 2: URGENT Propagation ---
-    # Identify which PKIDs are used in URGENT orders (within the filtered scope)
     urgent_pkids = exploded[exploded['URGENT_FLAG'] == 'Y']['CHILD_PKID'].unique()
     
     # --- Step 3: Aggregate Demand by PKID and Site ---
     demand_agg = exploded.groupby(['CHILD_PKID', 'PLANT_SITE'])['REQUIRED_QTY'].sum().reset_index()
     
-    # Merge with Inventory (Site-Specific Matching)
+    # Merge with Inventory
     analysis_df = demand_agg.merge(
         inventory, 
         left_on=['CHILD_PKID', 'PLANT_SITE'], 
@@ -167,60 +156,55 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
         how='left'
     )
     
-    # Fill NaN inventory with 0
     analysis_df['PKID_QTY'] = analysis_df['PKID_QTY'].fillna(0)
-    
-    # Calculate Shortage
     analysis_df['SHORTAGE_QTY'] = analysis_df['REQUIRED_QTY'] - analysis_df['PKID_QTY']
     analysis_df['SHORTAGE_QTY'] = analysis_df['SHORTAGE_QTY'].clip(lower=0)
     analysis_df['IS_SHORT'] = analysis_df['SHORTAGE_QTY'] > 0
-    
-    # Add URGENT Flag
     analysis_df['IS_URGENT'] = analysis_df['CHILD_PKID'].isin(urgent_pkids)
     
-    # --- Step 4: Generate R1 Report ---
-    # R1: CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, 총 주문 건수, 잔여 수량 (PN), 부족 PKID 개수, 결품 부품 상세
+    # --- Step 4: Generate R1 Report (Corrected Aggregation) ---
     
-    # We need to link shortages back to the Order/Product level.
-    # Join exploded with analysis_df to get shortage info for each component of each order
+    # 4-1. 기본 정보 집계 (Order Detail 레벨에서 집계하여 중복 방지)
+    # PN별 총 주문수량, 총 잔여수량 계산
+    r1_stats = order_details.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
+        TOTAL_ORDER_QTY=('ORDER_QTY', 'sum'),
+        TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum')
+    ).reset_index()
+    
+    # 4-2. 결품 정보 맵핑
+    # exploded 데이터에 결품 여부(IS_SHORT)를 붙임
     r1_base = exploded.merge(
-        analysis_df[['CHILD_PKID', 'PLANT_SITE', 'IS_SHORT', 'SHORTAGE_QTY']],
+        analysis_df[['CHILD_PKID', 'PLANT_SITE', 'IS_SHORT']],
         on=['CHILD_PKID', 'PLANT_SITE'],
         how='left'
     )
     
-    # Group by Product/Order level
-    r1_report = r1_base.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
-        TOTAL_ORDER_COUNT=('ORDER_KEY', 'nunique'),
-        TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum'), # Sum of remaining qty for these products
+    # 그룹별로 결품인 PKID 개수와 상세 내용 집계
+    r1_shortage = r1_base.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
         SHORT_PKID_COUNT=('CHILD_PKID', lambda x: x[r1_base.loc[x.index, 'IS_SHORT']].nunique()),
         SHORT_PKID_DETAILS=('CHILD_PKID', lambda x: ', '.join(sorted(x[r1_base.loc[x.index, 'IS_SHORT']].unique())))
     ).reset_index()
     
-    # Rename columns to match request
+    # 4-3. 두 결과 병합
+    r1_report = r1_stats.merge(r1_shortage, on=['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN'], how='left')
+    
+    # 컬럼명 정리
     r1_report = r1_report.rename(columns={
-        'TOTAL_ORDER_COUNT': '총 주문 건수',
-        'TOTAL_REMAINING_QTY': '잔여 수량 (PN)',
+        'TOTAL_ORDER_QTY': '총 주문 수량',
+        'TOTAL_REMAINING_QTY': '총 잔여 수량 (PN)',
         'SHORT_PKID_COUNT': '부족 PKID 개수',
         'SHORT_PKID_DETAILS': '결품 부품 상세'
     })
     
-    # --- Step 5: Generate R2 Report (Wide Format) ---
-    # R2: IS_URGENT, PKID, 결품 발생처, 총 소요량, 총 재고, 총 결품 수량, [ALL SITES] 소요량, [ALL SITES] 재고, 대체품...
-    
-    # Pivot for Wide Format
-    # We use all_plant_sites to ensure all columns exist
-    
+    # --- Step 5: Generate R2 Report (Wide Format with 0 Fill) ---
     pivot_req = analysis_df.pivot(index='CHILD_PKID', columns='PLANT_SITE', values='REQUIRED_QTY')
     pivot_inv = analysis_df.pivot(index='CHILD_PKID', columns='PLANT_SITE', values='PKID_QTY')
     
-    # Reindex with all sites (fill 0)
     pivot_req = pivot_req.reindex(columns=all_plant_sites, fill_value=0).add_suffix(' 소요량')
     pivot_inv = pivot_inv.reindex(columns=all_plant_sites, fill_value=0).add_suffix(' 재고')
     
     r2_wide = pd.concat([pivot_req, pivot_inv], axis=1)
     
-    # Summary Columns
     summary_cols = analysis_df.groupby('CHILD_PKID').agg(
         TOTAL_REQ=('REQUIRED_QTY', 'sum'),
         TOTAL_INV=('PKID_QTY', 'sum'),
@@ -228,32 +212,22 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
         IS_URGENT=('IS_URGENT', 'max')
     )
     
-    # Shortage Sites
     shortage_sites = analysis_df[analysis_df['SHORTAGE_QTY'] > 0].groupby('CHILD_PKID')['PLANT_SITE'].apply(lambda x: ', '.join(x))
     summary_cols['결품 발생처'] = shortage_sites
     
-    # Merge
     r2_report = summary_cols.join(r2_wide, how='left')
     
-    # Add Substitutes
-    # Also need Substitute Inventory per site?
-    # This is complex because Substitute Inventory is in Inventory_Master under SUBSTITUTE_PKID.
-    # We need to query Inventory_Master for Substitute PKIDs.
-    
-    # Get unique substitute PKIDs
+    # Substitutes logic
     sub_pkids = substitutes['SUBSTITUTE_PKID'].unique()
     if len(sub_pkids) > 0:
         sub_inv = inventory[inventory['PKID'].isin(sub_pkids)]
-        # Aggregate sub inventory by PKID: "Site: Qty, Site: Qty"
         sub_inv['INV_STR'] = sub_inv['PLANT_SITE'] + ': ' + sub_inv['PKID_QTY'].astype(str)
         sub_inv_agg = sub_inv.groupby('PKID')['INV_STR'].apply(lambda x: ', '.join(x)).reset_index()
         sub_inv_agg.columns = ['SUBSTITUTE_PKID', 'SUB_INV_DETAILS']
         
-        # Merge back to substitutes df
         substitutes_with_inv = substitutes.merge(sub_inv_agg, on='SUBSTITUTE_PKID', how='left')
         substitutes_with_inv['SUB_INV_DETAILS'] = substitutes_with_inv['SUB_INV_DETAILS'].fillna('재고 없음')
         
-        # Now aggregate for R2
         subs_agg = substitutes_with_inv.groupby('CHILD_PKID').agg({
             'SUBSTITUTE_PKID': lambda x: ', '.join(x.dropna().astype(str)),
             'DESCRIPTION': lambda x: ', '.join(x.dropna().astype(str)),
@@ -270,12 +244,8 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
         r2_report['추천대체품 DESCRIPTION'] = ''
         r2_report['대체품 재고 현황 (SITE별)'] = ''
 
-    # Filter: Only show items with Shortage > 0
-    r2_report = r2_report[r2_report['TOTAL_SHORTAGE'] > 0]
+    r2_report = r2_report[r2_report['TOTAL_SHORTAGE'] > 0].reset_index()
     
-    r2_report = r2_report.reset_index()
-    
-    # Rename Summary Columns
     r2_report = r2_report.rename(columns={
         'CHILD_PKID': 'PKID',
         'TOTAL_REQ': '총 소요량',
@@ -283,31 +253,24 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
         'TOTAL_SHORTAGE': '총 결품 수량'
     })
     
+    # Fill NaN with 0 for numeric/main columns (Text columns are excluded)
+    # Define columns that should strictly be text/empty if null
+    exclude_fill_cols = ['PKID', '결품 발생처', '추천 대체품', '추천대체품 DESCRIPTION', '대체품 재고 현황 (SITE별)']
+    cols_to_fill = [c for c in r2_report.columns if c not in exclude_fill_cols]
+    r2_report[cols_to_fill] = r2_report[cols_to_fill].fillna(0)
+    
     # Reorder Columns
-    # IS_URGENT, PKID, 결품 발생처, 총 소요량, 총 재고, 총 결품 수량
     fixed_cols = ['IS_URGENT', 'PKID', '결품 발생처', '총 소요량', '총 재고', '총 결품 수량']
-    
-    # Site Columns: [Site] 소요량, [Site] 재고 ...
-    # We want them interleaved? Or all Req then all Inv?
-    # Prompt says: [모든 PLANT_SITE 코드] 소요량... [모든 PLANT_SITE 코드] 재고...
-    # So all Req columns first, then all Inv columns.
-    
     site_req_cols = [f'{site} 소요량' for site in all_plant_sites]
     site_inv_cols = [f'{site} 재고' for site in all_plant_sites]
-    
     sub_cols = ['추천 대체품', '추천대체품 DESCRIPTION', '대체품 재고 현황 (SITE별)']
     
     final_cols = fixed_cols + site_req_cols + site_inv_cols + sub_cols
-    
-    # Ensure all columns exist
+    # Ensure columns exist before selecting
     final_cols = [c for c in final_cols if c in r2_report.columns]
-    
     r2_report = r2_report[final_cols]
     
-    # --- Step 6: Generate R3 Report (Production Feasibility) ---
-    # R3: PN, PART_NAME, CUSTOMER, PLANT_SITE, 생산가능수량, 제한부품, 부품현황
-    
-    # For each product, calculate how many units can be produced with current inventory
+    # --- Step 6: R3 Report ---
     r3_rows = []
     
     for _, product in products.iterrows():
@@ -316,14 +279,11 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
         customer = product['CUSTOMER']
         plant_site = product['PLANT_SITE']
         
-        # Get BOM for this product
         product_bom = bom[bom['PARENT_PN'] == pn]
         
         if product_bom.empty:
-            # No BOM = can't produce
             continue
         
-        # For each component, check inventory at this site
         min_producible = float('inf')
         limiting_component = ''
         component_details = []
@@ -332,29 +292,21 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
             child_pkid = bom_row['CHILD_PKID']
             bom_qty = bom_row['BOM_QTY']
             
-            # Get inventory for this component at this site
             comp_inv = inventory[(inventory['PKID'] == child_pkid) & (inventory['PLANT_SITE'] == plant_site)]
             
-            if comp_inv.empty:
-                available_qty = 0
-            else:
-                available_qty = comp_inv['PKID_QTY'].sum()
+            available_qty = comp_inv['PKID_QTY'].sum() if not comp_inv.empty else 0
             
-            # Calculate how many products can be made with this component
             if bom_qty > 0:
                 producible_with_this_comp = int(available_qty / bom_qty)
             else:
                 producible_with_this_comp = 0
             
-            # Track the minimum
             if producible_with_this_comp < min_producible:
                 min_producible = producible_with_this_comp
                 limiting_component = child_pkid
             
-            # Component status detail
             component_details.append(f"{child_pkid}: {available_qty}/{bom_qty}")
         
-        # Only include if producible quantity > 0
         if min_producible > 0 and min_producible != float('inf'):
             r3_rows.append({
                 'PN': pn,
@@ -367,8 +319,6 @@ def perform_shortage_analysis(target_customers, target_sites, target_statuses):
             })
     
     r3_report = pd.DataFrame(r3_rows)
-    
-    # Sort by producible quantity descending
     if not r3_report.empty:
         r3_report = r3_report.sort_values('생산가능수량', ascending=False).reset_index(drop=True)
     
@@ -414,7 +364,7 @@ def show_shortage_analysis():
         if not sel_statuses:
             st.error("주문 상태를 최소 하나 이상 선택해주세요.")
         else:
-            with st.spinner("데이터 로딩 및 분석 중... (Pre-Filtering Applied)"):
+            with st.spinner("데이터 로딩 및 분석 중..."):
                 r1, r2, r3, error = perform_shortage_analysis(sel_customers, sel_sites, sel_statuses)
                 
                 st.session_state['sa_r1'] = r1
@@ -439,7 +389,8 @@ def show_shortage_analysis():
             st.subheader("R1. 고객사-생산처별 통합 결품 현황")
             if r1 is not None and not r1.empty:
                 st.dataframe(r1, use_container_width=True)
-                csv_r1 = r1.to_csv(index=False).encode('utf-8')
+                # UTF-8-SIG Encoding for Korean CSV support
+                csv_r1 = r1.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 R1 다운로드 (CSV)", csv_r1, f"R1_Shortage_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
             else:
                 st.info("조건에 맞는 결품 데이터가 없습니다.")
@@ -453,10 +404,8 @@ def show_shortage_analysis():
                     r2.style.apply(lambda x: ['background-color: #ffcdd2' if x['IS_URGENT'] else '' for i in x], axis=1),
                     use_container_width=True
                 )
-                csv_r2 = r2.to_csv(index=False).encode('utf-8')
+                # UTF-8-SIG Encoding for Korean CSV support
+                csv_r2 = r2.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 R2 다운로드 (CSV)", csv_r2, f"R2_Shortage_Detail_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
             else:
                 st.info("조건에 맞는 결품 데이터가 없습니다.")
-            
-            st.divider()
-            
