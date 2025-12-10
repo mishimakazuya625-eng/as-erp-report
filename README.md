@@ -1,6 +1,6 @@
 # AS ERP System
 
-Streamlit 기반의 제조업 ERP 시스템입니다. 재고, BOM, 주문, 결품 분석 등을 관리할 수 있습니다.
+
 
 ## 주요 기능
 
