@@ -101,40 +101,31 @@ def delete_plant_site(site_code):
 # --- Inventory Management (Wide to Long) ---
 def process_inventory_upload(df, snapshot_date):
     """
-    Convert Wide format (PKID, Site1, Site2...) to Long format (PKID, PLANT_SITE, QTY, DATE)
-    and UPSERT into Inventory_Master.
+    Convert Wide format to Long format and UPSERT into Inventory_Master (Batch Version).
     """
-    # 1. Identify Site Columns (Columns that are not PKID/Total)
-    # Assuming 'PKID' is the key column.
     if 'PKID' not in df.columns:
         return False, "CSV must have a 'PKID' column."
     
-    # Get valid sites from DB to verify columns (Optional but good practice)
     conn = get_db_connection()
     valid_sites_df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master", conn)
-    conn.close()
-    # Normalize columns
     valid_sites_df.columns = valid_sites_df.columns.str.upper()
     valid_sites = set(valid_sites_df['SITE_CODE'].tolist())
     
-    # Filter columns that match valid sites
     site_cols = [col for col in df.columns if col in valid_sites]
     
     if not site_cols:
+        conn.close()
         return False, f"No valid site columns found in CSV. Registered sites: {valid_sites}"
     
-    # 2. Melt (Wide -> Long)
+    # Melt (Wide -> Long)
     long_df = df.melt(id_vars=['PKID'], value_vars=site_cols, var_name='PLANT_SITE', value_name='PKID_QTY')
-    
-    # 3. Clean Data
     long_df['PKID_QTY'] = pd.to_numeric(long_df['PKID_QTY'], errors='coerce').fillna(0).astype(int)
     long_df['SNAPSHOT_DATE'] = snapshot_date
     
-    # 4. UPSERT into DB
-    conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Using executemany with ON CONFLICT DO UPDATE
+        # --- Batch Insert (1000 rows at a time) ---
+        batch_size = 1000
         data_tuples = [tuple(x) for x in long_df[['PKID', 'PLANT_SITE', 'SNAPSHOT_DATE', 'PKID_QTY']].to_numpy()]
         
         query = '''
@@ -143,9 +134,21 @@ def process_inventory_upload(df, snapshot_date):
             ON CONFLICT (PKID, PLANT_SITE, SNAPSHOT_DATE) 
             DO UPDATE SET PKID_QTY = EXCLUDED.PKID_QTY
         '''
-        cursor.executemany(query, data_tuples)
+        
+        total = len(data_tuples)
+        for i in range(0, total, batch_size):
+            batch = data_tuples[i:i+batch_size]
+            # Use execute_values for much faster batch inserts
+            from psycopg2.extras import execute_values
+            execute_values(cursor, '''
+                INSERT INTO Inventory_Master (PKID, PLANT_SITE, SNAPSHOT_DATE, PKID_QTY)
+                VALUES %s
+                ON CONFLICT (PKID, PLANT_SITE, SNAPSHOT_DATE) 
+                DO UPDATE SET PKID_QTY = EXCLUDED.PKID_QTY
+            ''', batch)
+        
         conn.commit()
-        return True, f"Successfully uploaded {len(long_df)} inventory records for date {snapshot_date}."
+        return True, f"Successfully uploaded {total} inventory records for date {snapshot_date}."
     except Exception as e:
         conn.rollback()
         return False, str(e)
