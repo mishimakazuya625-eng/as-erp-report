@@ -101,7 +101,8 @@ def delete_plant_site(site_code):
 # --- Inventory Management (Wide to Long) ---
 def process_inventory_upload(df, snapshot_date):
     """
-    Convert Wide format to Long format and UPSERT into Inventory_Master (Batch Version).
+    Convert Wide format to Long format and UPSERT into Inventory_Master.
+    Uses small batches with individual commits to avoid statement timeout.
     """
     if 'PKID' not in df.columns:
         return False, "CSV must have a 'PKID' column."
@@ -110,11 +111,11 @@ def process_inventory_upload(df, snapshot_date):
     valid_sites_df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master", conn)
     valid_sites_df.columns = valid_sites_df.columns.str.upper()
     valid_sites = set(valid_sites_df['SITE_CODE'].tolist())
+    conn.close()
     
     site_cols = [col for col in df.columns if col in valid_sites]
     
     if not site_cols:
-        conn.close()
         return False, f"No valid site columns found in CSV. Registered sites: {valid_sites}"
     
     # Melt (Wide -> Long)
@@ -122,38 +123,40 @@ def process_inventory_upload(df, snapshot_date):
     long_df['PKID_QTY'] = pd.to_numeric(long_df['PKID_QTY'], errors='coerce').fillna(0).astype(int)
     long_df['SNAPSHOT_DATE'] = snapshot_date
     
-    cursor = conn.cursor()
-    try:
-        # --- Batch Insert (1000 rows at a time) ---
-        batch_size = 1000
-        data_tuples = [tuple(x) for x in long_df[['PKID', 'PLANT_SITE', 'SNAPSHOT_DATE', 'PKID_QTY']].to_numpy()]
+    # Prepare data
+    data_tuples = [tuple(x) for x in long_df[['PKID', 'PLANT_SITE', 'SNAPSHOT_DATE', 'PKID_QTY']].to_numpy()]
+    total = len(data_tuples)
+    
+    # --- Small Batch with Individual Commits ---
+    batch_size = 200  # 작은 배치 사이즈로 타임아웃 방지
+    success_count = 0
+    
+    from psycopg2.extras import execute_values
+    
+    for i in range(0, total, batch_size):
+        batch = data_tuples[i:i+batch_size]
         
-        query = '''
-            INSERT INTO Inventory_Master (PKID, PLANT_SITE, SNAPSHOT_DATE, PKID_QTY)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (PKID, PLANT_SITE, SNAPSHOT_DATE) 
-            DO UPDATE SET PKID_QTY = EXCLUDED.PKID_QTY
-        '''
+        # 각 배치마다 새 연결 (커넥션 타임아웃 방지)
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        total = len(data_tuples)
-        for i in range(0, total, batch_size):
-            batch = data_tuples[i:i+batch_size]
-            # Use execute_values for much faster batch inserts
-            from psycopg2.extras import execute_values
+        try:
             execute_values(cursor, '''
                 INSERT INTO Inventory_Master (PKID, PLANT_SITE, SNAPSHOT_DATE, PKID_QTY)
                 VALUES %s
                 ON CONFLICT (PKID, PLANT_SITE, SNAPSHOT_DATE) 
                 DO UPDATE SET PKID_QTY = EXCLUDED.PKID_QTY
             ''', batch)
-        
-        conn.commit()
-        return True, f"Successfully uploaded {total} inventory records for date {snapshot_date}."
-    except Exception as e:
-        conn.rollback()
-        return False, str(e)
-    finally:
-        conn.close()
+            conn.commit()
+            success_count += len(batch)
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return False, f"Error at row {i}: {str(e)}. Successfully inserted: {success_count}"
+        finally:
+            conn.close()
+    
+    return True, f"Successfully uploaded {success_count} inventory records for date {snapshot_date}."
 
 def get_inventory_comparison():
     """
