@@ -8,6 +8,7 @@ import bom_substitute_master
 import order_management
 import schema_update_module
 import shortage_analysis_report
+import purchase_management
 
 # --- Database Helper Functions ---
 # --- Database Helper Functions ---
@@ -54,6 +55,239 @@ def init_db():
             CUSTOMER TEXT NOT NULL,
             PLANT_SITE TEXT NOT NULL,
             REG_DATE DATE DEFAULT CURRENT_DATE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def check_duplicate_pn(pn_list):
+    conn = get_db_connection()
+    # Postgres uses %s for placeholders
+    # For IN clause with list, we need to format manually or use tuple
+    if not pn_list:
+        return []
+    
+    placeholders = ','.join(['%s'] * len(pn_list))
+    query = f"SELECT PN FROM Product_Master WHERE PN IN ({placeholders})"
+    
+    # pd.read_sql_query with psycopg2 connection
+    existing_pns = pd.read_sql_query(query, conn, params=tuple(pn_list))
+    conn.close()
+    
+    # Normalize columns to uppercase (Postgres returns lowercase)
+    existing_pns.columns = existing_pns.columns.str.upper()
+    
+    return existing_pns['PN'].tolist()
+
+def get_valid_plant_sites():
+    """Get all valid plant site codes"""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query("SELECT SITE_CODE FROM Plant_Site_Master", conn)
+        # Normalize columns to uppercase
+        df.columns = df.columns.str.upper()
+        return set(df['SITE_CODE'].tolist()) if not df.empty else set()
+    except:
+        # Plant_Site_Master might not exist yet
+        return set()
+    finally:
+        conn.close()
+
+def insert_product(pn, part_name, car_type, customer, plant_site):
+    # Validate PLANT_SITE
+    valid_sites = get_valid_plant_sites()
+    if valid_sites and plant_site not in valid_sites:
+        return False, f"Invalid PLANT_SITE. Must be one of: {', '.join(sorted(valid_sites))}"
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO Product_Master (PN, PART_NAME, CAR_TYPE, CUSTOMER, PLANT_SITE)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (pn, part_name, car_type, customer, plant_site))
+        conn.commit()
+        return True, "Success"
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        return False, "Product Number (PN) already exists."
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+    finally:
+        conn.close()
+
+def update_product(original_pn, part_name, car_type, customer, plant_site):
+    # Validate PLANT_SITE
+    valid_sites = get_valid_plant_sites()
+    if valid_sites and plant_site not in valid_sites:
+        return False, f"Invalid PLANT_SITE. Must be one of: {', '.join(sorted(valid_sites))}"
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE Product_Master
+            SET PART_NAME = %s, CAR_TYPE = %s, CUSTOMER = %s, PLANT_SITE = %s
+            WHERE PN = %s
+        ''', (part_name, car_type, customer, plant_site, original_pn))
+        conn.commit()
+        return True, "Success"
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+    finally:
+        conn.close()
+
+def delete_product(pn):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('DELETE FROM Product_Master WHERE PN = %s', (pn,))
+        conn.commit()
+        return True, "Success"
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+    finally:
+        conn.close()
+
+# --- Module Functions ---
+
+def show_product_master():
+    st.title("🔧 상품등록/수정 (Product Master)")
+
+    # Tabs for different functionalities
+    tab1, tab2, tab3 = st.tabs(["📂 Bulk Upload (CSV)", "📝 Registration/Modification", "🔍 View Master Data"])
+
+    # --- Tab 1: Bulk Upload ---
+    with tab1:
+        st.header("Bulk Upload via CSV")
+        st.info("Required Columns: PN, PART_NAME, CUSTOMER, PLANT_SITE (CAR_TYPE is optional)")
+        
+        uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
+        
+        if uploaded_file is not None:
+            try:
+                # Robust CSV Loading Logic
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp949')
+                
+                # Normalize column names: uppercase and strip whitespace
+                df.columns = df.columns.str.strip().str.upper()
+                
+                # Normalize data
+                for col in ['PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE']:
+                    if col in df.columns:
+                        df[col] = df[col].astype(str).str.strip().str.upper()
+                
+                # 1. Integrity Check: Required Columns
+                required_columns = {'PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE'}
+                if not required_columns.issubset(df.columns):
+                    missing = required_columns - set(df.columns)
+                    st.error(f"Missing required columns: {', '.join(missing)}")
+                else:
+                    # 2. Integrity Check: Null Values in Critical Columns
+                    null_check = df[list(required_columns)].isnull().any(axis=1)
+                    if null_check.any():
+                        error_rows = df[null_check].index.tolist()
+                        st.error("Data Error: Null values found in required columns.")
+                        st.write("Error Rows (0-indexed):", error_rows)
+                        st.dataframe(df[null_check])
+                    else:
+                        # 3. Validate PLANT_SITE
+                        valid_plant_sites = get_valid_plant_sites()
+                        if valid_plant_sites:
+                            invalid_site_mask = ~df['PLANT_SITE'].isin(valid_plant_sites)
+                            if invalid_site_mask.any():
+                                invalid_sites_df = df[invalid_site_mask]
+                                st.error(f"Found {len(invalid_sites_df)} rows with invalid PLANT_SITE values.")
+                                st.write(f"Valid plant sites: {', '.join(sorted(valid_plant_sites))}")
+                                st.dataframe(invalid_sites_df[['PN', 'PLANT_SITE']])
+                                df = df[~invalid_site_mask]
+                        
+                        # 4. Filter out header rows (where PN equals 'PN' or 'pn')
+                        header_mask = df['PN'].astype(str).str.upper() == 'PN'
+                        if header_mask.any():
+                            st.warning(f"Filtering out {header_mask.sum()} header rows from CSV.")
+                            df = df[~header_mask]
+                        
+                        # 5. Duplicate Handling
+                        if df.empty:
+                            st.warning("No valid data to process after filtering.")
+                        else:
+                            unique_pns = df['PN'].unique().tolist()
+                        duplicates_in_db = check_duplicate_pn(unique_pns)
+                        
+                        if duplicates_in_db:
+                            st.warning(f"Found {len(duplicates_in_db)} duplicate PNs in Database. These will be skipped.")
+                            st.write("Duplicate PNs:", duplicates_in_db)
+                        
+                        # Filter out duplicates
+                        df_to_insert = df[~df['PN'].isin(duplicates_in_db)]
+                        
+                        if not df_to_insert.empty:
+                            conn = get_db_connection()
+                            try:
+                                cols_to_insert = ['PN', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE']
+                                if 'CAR_TYPE' in df.columns:
+                                    cols_to_insert.append('CAR_TYPE')
+                                
+                                # Use fast_executemany or simple loop for insertion
+                                # For simplicity and compatibility, we use to_sql if using sqlalchemy, 
+                                # but here we use psycopg2 directly or pandas to_sql with sqlalchemy engine.
+                                # However, pandas to_sql requires sqlalchemy engine.
+                                # We should use cursor.executemany for psycopg2.
+                                
+                                cursor = conn.cursor()
+                                data_tuples = [tuple(x) for x in df_to_insert[cols_to_insert].to_numpy()]
+                                
+                                cols_str = ', '.join(cols_to_insert)
+                                placeholders = ', '.join(['%s'] * len(cols_to_insert))
+                                query = f"INSERT INTO Product_Master ({cols_str}) VALUES ({placeholders})"
+                                
+                                cursor.executemany(query, data_tuples)
+```python
+import streamlit as st
+import pandas as pd
+import psycopg2
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- Database Connection ---
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD")
+    )
+
+# --- Module Imports ---
+# Assuming these modules exist and are in the same directory or accessible via PYTHONPATH
+import order_management
+import bom_substitute_master
+import schema_update_module
+import shortage_analysis_report
+import purchase_management # Added import
+
+# --- Database Initialization ---
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Product_Master (
+            PN VARCHAR(255) PRIMARY KEY,
+            PART_NAME VARCHAR(255) NOT NULL,
+            CAR_TYPE VARCHAR(255),
+            CUSTOMER VARCHAR(255) NOT NULL,
+            PLANT_SITE VARCHAR(255) NOT NULL
         )
     ''')
     conn.commit()
@@ -392,6 +626,9 @@ def show_schedule_management():
     st.title("📅 원자재 일정 및 완제품 일정 관리")
     st.info("Coming Soon: Material & Product Schedule Management Module")
 
+def show_purchase_management_module():
+    purchase_management.show_purchase_management()
+
 def show_report():
     st.title("📊 Report 출력")
     st.info("Coming Soon: Reporting Module")
@@ -556,8 +793,9 @@ def main():
             "2. 📦 PO upload 및 관리",
             "3. 🔩 BOM 관리 및 대체자재",
             "4. 🏭 생산처 및 재고 관리",
-            "5. 📅 원자재 일정 관리",
-            "6. 🚨 결품 분석 리포트"
+            "5. 💰 구매 관리", # Added Purchase Management
+            "6. 📅 원자재 일정 관리",
+            "7. 🚨 결품 분석 리포트"
         ]
         
         selection = st.radio("", menu_options, label_visibility="collapsed")
@@ -579,11 +817,13 @@ def main():
         show_bom_management()
     elif selection == "4. 🏭 생산처 및 재고 관리":
         show_schema_management()
-    elif selection == "5. 📅 원자재 일정 관리":
+    elif selection == "5. 💰 구매 관리": # Added condition for Purchase Management
+        show_purchase_management_module()
+    elif selection == "6. 📅 원자재 일정 관리":
         show_schedule_management()
-    elif selection == "6. 🚨 결품 분석 리포트":
+    elif selection == "7. 🚨 결품 분석 리포트":
         show_shortage_analysis()
 
 if __name__ == "__main__":
     main()
-
+```
