@@ -388,7 +388,6 @@ def show_schema_management():
 def show_shortage_analysis():
     shortage_analysis_report.show_shortage_analysis()
 
-
 def show_purchase_management_module():
     purchase_management.show_purchase_management()
 
@@ -556,9 +555,8 @@ def main():
             "2. 📦 PO upload 및 관리",
             "3. 🔩 BOM 관리 및 대체자재",
             "4. 🏭 생산처 및 재고 관리",
-            "5. 💰 구매 관리", # Added Purchase Management
-            "6. 📅 원자재 일정 관리",
-            "7. 🚨 결품 분석 리포트"
+            "5. 📅 원자재 일정 관리",
+            "6. 🚨 결품 분석 리포트"
         ]
         
         selection = st.radio("", menu_options, label_visibility="collapsed")
