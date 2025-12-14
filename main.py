@@ -570,15 +570,15 @@ def main():
             </div>
         """, unsafe_allow_html=True)
     
-    if selection == "1. 🔧 상품등록/수정":
+    if selection == "1. 상품등록/수정":
         show_product_master()
-    elif selection == "2. 📦 PO upload 및 관리":
+    elif selection == "2.  PO upload 및 관리":
         show_po_management()
     elif selection == "3. 🔩 BOM 관리 및 대체자재":
         show_bom_management()
     elif selection == "4. 🏭 생산처 및 재고 관리":
         show_schema_management()
-    elif selection == "5. 💰 원자재 상태 관리": # Added condition for Purchase Management
+    elif selection == "5. 📅 원자재 일정 관리": # Added condition for Purchase Management
         show_purchase_management_module()
     elif selection == "6. 🚨 결품 분석 리포트":
         show_shortage_analysis()
