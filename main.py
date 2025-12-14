@@ -388,9 +388,6 @@ def show_schema_management():
 def show_shortage_analysis():
     shortage_analysis_report.show_shortage_analysis()
 
-def show_schedule_management():
-    st.title("📅 원자재 일정 및 완제품 일정 관리")
-    st.info("Coming Soon: Material & Product Schedule Management Module")
 
 def show_purchase_management_module():
     purchase_management.show_purchase_management()
@@ -583,10 +580,8 @@ def main():
         show_bom_management()
     elif selection == "4. 🏭 생산처 및 재고 관리":
         show_schema_management()
-    elif selection == "5. 💰 구매 관리": # Added condition for Purchase Management
+    elif selection == "5. 💰 원자재 상태 관리": # Added condition for Purchase Management
         show_purchase_management_module()
-    elif selection == "6. 📅 원자재 일정 관리":
-        show_schedule_management()
     elif selection == "7. 🚨 결품 분석 리포트":
         show_shortage_analysis()
 
