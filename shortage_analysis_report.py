@@ -70,7 +70,7 @@ def load_data(target_customers, target_statuses):
         
         # Load Products (filtered by customer only, NOT by site)
         products_query = f"""
-            SELECT PN, PART_NAME, CUSTOMER, PLANT_SITE
+            SELECT PN, PART_NAME, CAR_TYPE, CUSTOMER, PLANT_SITE
             FROM Product_Master
             WHERE CUSTOMER IN {customer_filter}
         """
@@ -129,6 +129,9 @@ def perform_shortage_analysis(target_customers, target_statuses):
     order_details['REMAINING_QTY'] = order_details['ORDER_QTY'] - order_details['DELIVERED_QTY']
     order_details['REMAINING_QTY'] = order_details['REMAINING_QTY'].clip(lower=0)
     
+    # Fill NaN URGENT_FLAG with 'N'
+    order_details['URGENT_FLAG'] = order_details['URGENT_FLAG'].fillna('N')
+    
     exploded = order_details.merge(bom, left_on='PN', right_on='PARENT_PN', how='inner')
     
     if exploded.empty:
@@ -157,7 +160,8 @@ def perform_shortage_analysis(target_customers, target_statuses):
     analysis_df['IS_URGENT'] = analysis_df['CHILD_PKID'].isin(urgent_pkids)
     
     # --- Step 4: Generate R1 Report ---
-    r1_stats = order_details.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
+    # Group by URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN
+    r1_stats = order_details.groupby(['URGENT_FLAG', 'CAR_TYPE', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
         TOTAL_ORDER_QTY=('ORDER_QTY', 'sum'),
         TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum')
     ).reset_index()
@@ -167,6 +171,12 @@ def perform_shortage_analysis(target_customers, target_statuses):
         on=['CHILD_PKID', 'PLANT_SITE'],
         how='left'
     )
+    
+    # We need to join back product info to r1_base to group by same columns if needed, 
+    # but r1_shortage is joined to r1_stats on PN/Customer/Site/Status.
+    # Actually, r1_shortage needs to be grouped by the same keys to ensure unique join, 
+    # OR we just group by PN, CUSTOMER, PLANT_SITE, ORDER_STATUS and join, then r1_stats has the extra columns.
+    # Let's keep r1_shortage grouping simple (keys that define the order/product context) and join.
     
     r1_shortage = r1_base.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
         SHORT_PKID_COUNT=('CHILD_PKID', lambda x: x[r1_base.loc[x.index, 'IS_SHORT']].nunique()),
@@ -181,6 +191,16 @@ def perform_shortage_analysis(target_customers, target_statuses):
         'SHORT_PKID_COUNT': '부족 PKID 개수',
         'SHORT_PKID_DETAILS': '결품 부품 상세'
     })
+    
+    # Reorder columns
+    # URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, ...
+    cols_order = [
+        'URGENT_FLAG', 'CAR_TYPE', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN',
+        '총 주문 수량', '총 잔여 수량 (PN)', '부족 PKID 개수', '결품 부품 상세'
+    ]
+    # Ensure all columns exist (in case some are missing)
+    cols_order = [c for c in cols_order if c in r1_report.columns]
+    r1_report = r1_report[cols_order]
     
     # --- Step 5: Generate R2 Report (Fixed: Get ALL site inventory for each PKID) ---
     
