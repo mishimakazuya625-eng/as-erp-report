@@ -570,9 +570,9 @@ def main():
             </div>
         """, unsafe_allow_html=True)
     
-    if selection == "1. 상품등록/수정":
+    if selection == "1. 🔧 상품등록/수정":
         show_product_master()
-    elif selection == "2.  PO upload 및 관리":
+    elif selection == "2. 📦 PO upload 및 관리":
         show_po_management()
     elif selection == "3. 🔩 BOM 관리 및 대체자재":
         show_bom_management()
