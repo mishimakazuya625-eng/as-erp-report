@@ -260,18 +260,7 @@ def show_product_master():
 
             except Exception as e:
                 st.error(f"Failed to process CSV: {e}")
-                                conn.commit()
-                                st.success(f"Successfully registered {len(df_to_insert)} products.")
-                            except Exception as e:
-                                conn.rollback()
-                                st.error(f"An error occurred during insertion: {e}")
-                            finally:
-                                conn.close()
-                        else:
-                            st.info("No new data to insert.")
 
-            except Exception as e:
-                st.error(f"Failed to process CSV: {e}")
 
     # --- Tab 2: CRUD Operations ---
     with tab2:
