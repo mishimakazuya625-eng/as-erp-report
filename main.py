@@ -580,7 +580,7 @@ def main():
         show_schema_management()
     elif selection == "5. 💰 원자재 상태 관리": # Added condition for Purchase Management
         show_purchase_management_module()
-    elif selection == "7. 🚨 결품 분석 리포트":
+    elif selection == "6. 🚨 결품 분석 리포트":
         show_shortage_analysis()
 
 if __name__ == "__main__":
