@@ -161,7 +161,7 @@ def perform_shortage_analysis(target_customers, target_statuses):
     
     # --- Step 4: Generate R1 Report ---
     # Group by URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN
-    r1_stats = order_details.groupby(['URGENT_FLAG', 'CAR_TYPE', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
+    r1_stats = order_details.groupby(['URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN']).agg(
         TOTAL_ORDER_QTY=('ORDER_QTY', 'sum'),
         TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum')
     ).reset_index()
@@ -195,7 +195,7 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # Reorder columns
     # URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, ...
     cols_order = [
-        'URGENT_FLAG', 'CAR_TYPE', 'PART_NAME', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN',
+        'URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN',
         '총 주문 수량', '총 잔여 수량 (PN)', '부족 PKID 개수', '결품 부품 상세'
     ]
     # Ensure all columns exist (in case some are missing)
@@ -387,7 +387,7 @@ def show_shortage_analysis():
         if not sel_statuses:
             st.error("주문 상태를 최소 하나 이상 선택해주세요.")
         else:
-            with st.spinner("데이터 로딩 및 분석 중..."):
+            with st.spinner("데이터 로딩 및 분석 중(4~5분 소요...)"):
                 r1, r2, r3, error = perform_shortage_analysis(sel_customers, sel_statuses)
                 
                 st.session_state['sa_r1'] = r1
