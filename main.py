@@ -243,13 +243,18 @@ def show_product_master():
                                 # We should use cursor.executemany for psycopg2.
                                 
                                 cursor = conn.cursor()
+
                                 data_tuples = [tuple(x) for x in df_to_insert[cols_to_insert].to_numpy()]
-                                
+
                                 cols_str = ', '.join(cols_to_insert)
                                 placeholders = ', '.join(['%s'] * len(cols_to_insert))
                                 query = f"INSERT INTO Product_Master ({cols_str}) VALUES ({placeholders})"
+                                
+                                cursor.executemany(query, data_tuples) 
                                 conn.commit()
+                                
                                 st.success(f"Successfully registered {len(df_to_insert)} products.")
+                            
                             except Exception as e:
                                 conn.rollback()
                                 st.error(f"An error occurred during insertion: {e}")
