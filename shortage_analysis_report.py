@@ -366,9 +366,11 @@ def show_shortage_analysis():
     
     col1, col2 = st.columns(2)
     with col1:
-        sel_customers = st.multiselect("고객사 (Customer)", avail_customers, default=avail_customers)
+    # 기본값으로 빈 리스트 [] 를 사용합니다.
+        sel_customers = st.multiselect("고객사 (Customer)", avail_customers, default=[])
     with col2:
-        sel_statuses = st.multiselect("주문 상태 (Order Status)", ['OPEN', 'URGENT'], default=['OPEN', 'URGENT'])
+    # 기본값으로 빈 리스트 [] 를 사용합니다.
+        sel_statuses = st.multiselect("주문 상태 (Order Status)", ['OPEN', 'URGENT'], default=[])
     
     # Initialize Session State
     if 'sa_r1' not in st.session_state:
