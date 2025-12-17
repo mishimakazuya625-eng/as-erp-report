@@ -267,9 +267,9 @@ def perform_shortage_analysis(target_customers, target_statuses):
             
     r1_report = r1_report.rename(columns={
         'TOTAL_ORDER_QTY': '총 주문 수량',
-        'TOTAL_AS_INV': 'AS 재고 총량',
-        'TOTAL_REMAINING_QTY': '순 잔여 수량 (AS차감후)',
-        'TOTAL_AS_DEDUCTED': 'AS 재고 충당 수량',
+        # [REMOVED] 'TOTAL_AS_INV': 'AS 재고 총량',
+        'TOTAL_REMAINING_QTY': '순 잔여수량', # Renamed
+        # [REMOVED] 'TOTAL_AS_DEDUCTED': 'AS 재고 충당 수량',
         'SHORT_PKID_COUNT': '부족 PKID 개수',
         'SHORT_PKID_DETAILS': '결품 부품 상세'
     })
@@ -278,9 +278,9 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, ...
     cols_order = [
         'URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN',
-        '총 주문 수량', 'AS 재고 총량', '순 잔여 수량 (AS차감후)', 'AS 재고 충당 수량'
+        '총 주문 수량'
     ] + as_cols + [
-        '부족 PKID 개수', '결품 부품 상세'
+        '순 잔여수량', '부족 PKID 개수', '결품 부품 상세'
     ]
     
     # Ensure all columns exist (in case some are missing)
