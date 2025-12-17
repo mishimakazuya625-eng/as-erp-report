@@ -103,6 +103,8 @@ def load_data(target_customers, target_statuses):
         # --- [NEW] Load AS Inventory ---
         as_inv_query = "SELECT PN, LOCATION, QTY FROM AS_Inventory_Master"
         as_inventory = pd.read_sql_query(as_inv_query, conn)
+        # [FIX] Normalize to uppercase to avoid KeyError with 'QTY' vs 'qty'
+        as_inventory.columns = as_inventory.columns.str.upper()
         
         # Pivot AS Inventory for Analysis (PN index, Columns=Location, Values=QTY)
         if not as_inventory.empty:
