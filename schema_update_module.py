@@ -217,10 +217,14 @@ def get_inventory_comparison():
     return pivot_df
 
 # --- [NEW] AS Inventory Logic ---
-def process_as_inventory_upload(df, snapshot_date):
+def process_as_inventory_upload(df):
     """
     Upload AS Inventory (PN based) with specific locations.
     Target Columns: PN, 114(A/S창고), 114C(천안 A/S창고), 114R(부산 A/S 창고), 111H(HMC창고), 운송중(927SF), 운송중(111S), 운송중(DEY)
+    
+    [LOGIC CHANGE]
+    - Overwrites ALL existing data in AS_Inventory_Master.
+    - Snapshot Date is automatically set to CURRENT DATE.
     """
     REQUIRED_LOCATIONS = ['114(A/S창고)', '114C(천안 A/S창고)', '114R(부산 A/S 창고)', '111H(HMC창고)', '운송중(927SF)', '운송중(111S)', '운송중(DEY)']
     
@@ -238,37 +242,71 @@ def process_as_inventory_upload(df, snapshot_date):
     
     # Clean Data
     long_df['QTY'] = pd.to_numeric(long_df['QTY'], errors='coerce').fillna(0).astype(int)
-    long_df['SNAPSHOT_DATE'] = snapshot_date
+    
+    # [AUTO DATE]
+    current_date = datetime.now().date()
+    long_df['SNAPSHOT_DATE'] = current_date
     
     # Prepare for Bulk Insert
     data_tuples = [tuple(x) for x in long_df[['PN', 'LOCATION', 'SNAPSHOT_DATE', 'QTY']].to_numpy()]
     
-    # Batch Insert
-    batch_size = 500
-    success_count = 0
-    total = len(data_tuples)
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    for i in range(0, total, batch_size):
-        batch = data_tuples[i:i+batch_size]
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
+    try:
+        # [OVERWRITE LOGIC]
+        # 1. Delete ALL existing data
+        cursor.execute("DELETE FROM AS_Inventory_Master")
+        
+        # 2. Batch Insert
+        batch_size = 500
+        success_count = 0
+        total = len(data_tuples)
+        
+        for i in range(0, total, batch_size):
+            batch = data_tuples[i:i+batch_size]
             execute_values(cursor, '''
                 INSERT INTO AS_Inventory_Master (PN, LOCATION, SNAPSHOT_DATE, QTY)
                 VALUES %s
-                ON CONFLICT (PN, LOCATION, SNAPSHOT_DATE)
-                DO UPDATE SET QTY = EXCLUDED.QTY
             ''', batch)
-            conn.commit()
             success_count += len(batch)
-        except Exception as e:
-            conn.rollback()
-            conn.close()
-            return False, f"Error uploading batch {i}: {e}. Processed {success_count} records."
-        finally:
-            conn.close()
             
-    return True, f"Successfully uploaded {success_count} AS inventory records."
+        conn.commit()
+        return True, f"Successfully Overwritten {success_count} AS inventory records. (Date: {current_date})"
+        
+    except Exception as e:
+        conn.rollback()
+        return False, f"Error during overwrite: {e}"
+    finally:
+        conn.close()
+
+def get_as_inventory_status():
+    """
+    Get the latest status of AS Inventory.
+    Returns: last_updated_date, dataframe (pivot)
+    """
+    conn = get_db_connection()
+    try:
+        # Get Max Date
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(SNAPSHOT_DATE) FROM AS_Inventory_Master")
+        last_date = cursor.fetchone()[0]
+        
+        if not last_date:
+            return None, pd.DataFrame()
+            
+        # Get All Data
+        df = pd.read_sql_query("SELECT * FROM AS_Inventory_Master", conn)
+        
+        # Pivot for display
+        if not df.empty:
+            pivot_df = df.pivot_table(index='PN', columns='LOCATION', values='QTY', fill_value=0).reset_index()
+        else:
+            pivot_df = pd.DataFrame()
+            
+        return last_date, pivot_df
+    finally:
+        conn.close()
 
 def show_schema_management():
     st.title("🏭 생산처 및 재고 관리 (Master Data)")
@@ -276,11 +314,12 @@ def show_schema_management():
     # Initialize Tables First
     init_schema_tables()
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🏭 Plant Site Management", 
         "📦 Inventory Upload (Wide)", 
         "🔧 A/S Inventory Upload", 
-        "📈 Inventory History"
+        "📈 Inventory History",
+        "📊 A/S Inventory Status"
     ])
 
     # --- Tab 1: Plant Site ---
@@ -410,17 +449,15 @@ def show_schema_management():
     # --- Tab 3: [NEW] AS Inventory Upload ---
     with tab3:
         st.header("🔧 A/S Inventory Upload (PN Based)")
+        st.warning("⚠️ ATTENTION: Uploading here will OVERWRITE all existing A/S Inventory data.")
         st.info("""
         **Format**: PN column + Location columns.
         **Supported Locations**: 114(A/S창고), 114C(천안 A/S창고), 114R(부산 A/S 창고), 111H(HMC창고), 운송중(927SF), 운송중(111S), 운송중(DEY)
-        
-        Example:
-        | PN   | 114(A/S창고) | 114C(천안 A/S창고) | ... |
-        |------|--------------|-------------------|-----|
-        | A001 | 10           | 5                 | ... |
+        **Date**: Automatically set to TODAY.
         """)
-
-        as_snapshot_date = st.date_input("Snapshot Date", value=datetime.now(), key="date_as")
+        
+        # [REMOVED] Snapshot Date Input -> Auto set in function
+        
         as_file = st.file_uploader("Upload A/S Inventory CSV", type=['csv'], key="as_upload")
 
         if as_file:
@@ -432,7 +469,7 @@ def show_schema_management():
                      as_file.seek(0)
                      as_df = pd.read_csv(as_file, encoding='utf-8-sig')
 
-                # Clean Headers (strip whitespace, but KEEP CASE/Korean for matching)
+                # Clean Headers
                 as_df.columns = as_df.columns.str.strip()
                 
                 # Check for PN
@@ -441,8 +478,8 @@ def show_schema_management():
 
                 st.write("Preview:", as_df.head())
                 
-                if st.button("Process A/S Upload", key="btn_as_upload"):
-                    success, msg = process_as_inventory_upload(as_df, as_snapshot_date)
+                if st.button("🚨 Overwrite & Upload A/S Inventory", key="btn_as_upload"):
+                    success, msg = process_as_inventory_upload(as_df)
                     if success:
                         st.success(msg)
                     else:
@@ -450,7 +487,7 @@ def show_schema_management():
                         
             except Exception as e:
                 st.error(f"Error processing CSV: {e}")
-
+                
     # --- Tab 4: Inventory History ---
     with tab4:
         st.header("Inventory Snapshot Comparison (Last 4 - PKID Based)")
@@ -461,6 +498,26 @@ def show_schema_management():
             st.dataframe(comp_df, use_container_width=True)
         else:
             st.info("No inventory history found.")
+            
+    # --- Tab 5: A/S Status ---
+    with tab5:
+        st.header("📊 A/S Inventory Status")
+        
+        last_date, status_df = get_as_inventory_status()
+        
+        if last_date:
+            st.info(f"📅 Last Updated: **{last_date}**")
+            st.dataframe(status_df, use_container_width=True)
+            
+            if st.button("Refresh Data"):
+                st.rerun()
+        else:
+            st.info("No A/S Inventory data found.")
+            if st.button("Go to Upload Tab"):
+                # Streamlit doesn't support programmatic tab switching easily without session state hacks,
+                # so we just provide a hint.
+                st.info("Please switch to the '🔧 A/S Inventory Upload' tab to upload data.")
+
 
 if __name__ == "__main__":
     show_schema_management()
