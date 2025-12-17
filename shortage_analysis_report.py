@@ -100,20 +100,80 @@ def load_data(target_customers, target_statuses):
         # Get ALL plant sites from inventory (not from filtered products)
         all_plant_sites = sorted(inventory['PLANT_SITE'].unique().tolist()) if not inventory.empty else []
         
-        return orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites
+        # --- [NEW] Load AS Inventory ---
+        as_inv_query = "SELECT PN, LOCATION, QTY FROM AS_Inventory_Master"
+        as_inventory = pd.read_sql_query(as_inv_query, conn)
+        
+        # Pivot AS Inventory for Analysis (PN index, Columns=Location, Values=QTY)
+        if not as_inventory.empty:
+            as_pivot = as_inventory.pivot_table(index='PN', columns='LOCATION', values='QTY', aggfunc='sum', fill_value=0)
+            as_pivot['AS_TOTAL'] = as_pivot.sum(axis=1) # Total per PN
+            as_pivot = as_pivot.reset_index()
+        else:
+            as_pivot = pd.DataFrame(columns=['PN', 'AS_TOTAL'])
+        
+        return orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites, as_pivot
         
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), None, []
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), None, [], pd.DataFrame()
     finally:
         conn.close()
 
+def allocate_as_inventory(order_details, as_pivot):
+    """
+    Allocates AS Inventory to Orders (FIFO based on ORDER_DATE) to reduce REMAINING_QTY.
+    Returns: Updated order_details
+    """
+    if as_pivot.empty or 'AS_TOTAL' not in as_pivot.columns:
+        return order_details
+    
+    # Merge AS Total info
+    # We use a temp column to track available AS inventory
+    merged = order_details.merge(as_pivot[['PN', 'AS_TOTAL']], on='PN', how='left')
+    merged['AS_TOTAL'] = merged['AS_TOTAL'].fillna(0)
+    
+    # Sort by Date to prioritize older orders
+    merged = merged.sort_values(['PN', 'ORDER_DATE', 'URGENT_FLAG'], ascending=[True, True, False])
+    
+    # Allocation Logic
+    # Since vectorizing stateful subtraction is hard, we iterate by PN groups or use cumulative sum
+    # Cumulative approach:
+    # 1. Calc Cumulative Remaining per PN
+    # 2. Compare with AS_TOTAL
+    
+    # Group by PN
+    # cumsum of remaining qty
+    merged['CUM_REQ'] = merged.groupby('PN')['REMAINING_QTY'].cumsum()
+    
+    # Determine how much can be covered
+    # covered_qty = min(remaining_qty, max(0, as_total - (cum_req - remaining_qty)))
+    # logic: avail = as_total - previous_cum_req
+    #        deduct = min(current_remaining, avail)
+    
+    def calc_deduction(row):
+        total_as = row['AS_TOTAL']
+        if total_as <= 0:
+            return 0
+        
+        prev_cum = row['CUM_REQ'] - row['REMAINING_QTY']
+        avail_for_this = max(0, total_as - prev_cum)
+        
+        deduct = min(row['REMAINING_QTY'], avail_for_this)
+        return deduct
+
+    merged['AS_DEDUCTED'] = merged.apply(calc_deduction, axis=1)
+    
+    # Update Remaining Qty
+    merged['REMAINING_QTY'] = merged['REMAINING_QTY'] - merged['AS_DEDUCTED']
+    
+    return merged, as_pivot
 
 def perform_shortage_analysis(target_customers, target_statuses):
     """
     Core Logic with Pre-Filtering and Corrected Aggregation
     """
-    orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites = load_data(target_customers, target_statuses)
+    orders, products, bom, inventory, substitutes, snapshot_date, all_plant_sites, as_pivot = load_data(target_customers, target_statuses)
     
     if orders.empty:
         return None, None, None, "No orders found matching the status criteria."
@@ -129,6 +189,9 @@ def perform_shortage_analysis(target_customers, target_statuses):
     order_details['REMAINING_QTY'] = order_details['ORDER_QTY'] - order_details['DELIVERED_QTY']
     order_details['REMAINING_QTY'] = order_details['REMAINING_QTY'].clip(lower=0)
     
+    # [NEW] Apply AS Inventory Deduction
+    order_details, as_pivot_info = allocate_as_inventory(order_details, as_pivot)
+
     # Fill NaN URGENT_FLAG with 'N'
     order_details['URGENT_FLAG'] = order_details['URGENT_FLAG'].fillna('N')
     
@@ -163,7 +226,8 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # Group by URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN
     r1_stats = order_details.groupby(['URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN']).agg(
         TOTAL_ORDER_QTY=('ORDER_QTY', 'sum'),
-        TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum')
+        TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum'), # This is now NET Remaining
+        TOTAL_AS_DEDUCTED=('AS_DEDUCTED', 'sum') # New metric
     ).reset_index()
     
     r1_base = exploded.merge(
@@ -172,12 +236,6 @@ def perform_shortage_analysis(target_customers, target_statuses):
         how='left'
     )
     
-    # We need to join back product info to r1_base to group by same columns if needed, 
-    # but r1_shortage is joined to r1_stats on PN/Customer/Site/Status.
-    # Actually, r1_shortage needs to be grouped by the same keys to ensure unique join, 
-    # OR we just group by PN, CUSTOMER, PLANT_SITE, ORDER_STATUS and join, then r1_stats has the extra columns.
-    # Let's keep r1_shortage grouping simple (keys that define the order/product context) and join.
-    
     r1_shortage = r1_base.groupby(['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN']).agg(
         SHORT_PKID_COUNT=('CHILD_PKID', lambda x: x[r1_base.loc[x.index, 'IS_SHORT']].nunique()),
         SHORT_PKID_DETAILS=('CHILD_PKID', lambda x: ', '.join(sorted(x[r1_base.loc[x.index, 'IS_SHORT']].unique())))
@@ -185,9 +243,22 @@ def perform_shortage_analysis(target_customers, target_statuses):
     
     r1_report = r1_stats.merge(r1_shortage, on=['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN'], how='left')
     
+    # [NEW] Merge AS Inventory Details (PN based)
+    if not as_pivot_info.empty:
+        r1_report = r1_report.merge(as_pivot_info, on='PN', how='left')
+        
+    # As_pivot columns excluding PN and AS_TOTAL
+    as_cols = [c for c in as_pivot_info.columns if c not in ['PN', 'AS_TOTAL']]
+    
+    # Fill NaN for AS cols
+    for col in as_cols:
+        if col in r1_report.columns:
+            r1_report[col] = r1_report[col].fillna(0)
+            
     r1_report = r1_report.rename(columns={
         'TOTAL_ORDER_QTY': '총 주문 수량',
-        'TOTAL_REMAINING_QTY': '총 잔여 수량 (PN)',
+        'TOTAL_REMAINING_QTY': '순 잔여 수량 (AS차감후)',
+        'TOTAL_AS_DEDUCTED': 'AS 재고 충당 수량',
         'SHORT_PKID_COUNT': '부족 PKID 개수',
         'SHORT_PKID_DETAILS': '결품 부품 상세'
     })
@@ -196,8 +267,11 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, ...
     cols_order = [
         'URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN',
-        '총 주문 수량', '총 잔여 수량 (PN)', '부족 PKID 개수', '결품 부품 상세'
+        '총 주문 수량', '순 잔여 수량 (AS차감후)', 'AS 재고 충당 수량'
+    ] + as_cols + [
+        '부족 PKID 개수', '결품 부품 상세'
     ]
+    
     # Ensure all columns exist (in case some are missing)
     cols_order = [c for c in cols_order if c in r1_report.columns]
     r1_report = r1_report[cols_order]
