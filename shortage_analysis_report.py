@@ -190,7 +190,14 @@ def perform_shortage_analysis(target_customers, target_statuses):
     order_details['REMAINING_QTY'] = order_details['REMAINING_QTY'].clip(lower=0)
     
     # [NEW] Apply AS Inventory Deduction
+    # This adds 'AS_TOTAL' and 'AS_DEDUCTED' columns
     order_details, as_pivot_info = allocate_as_inventory(order_details, as_pivot)
+
+    # [FIX] Ensure AS_TOTAL exists even if allocation did nothing (e.g. no AS inventory)
+    if 'AS_TOTAL' not in order_details.columns:
+        order_details['AS_TOTAL'] = 0
+    if 'AS_DEDUCTED' not in order_details.columns:
+        order_details['AS_DEDUCTED'] = 0
 
     # Fill NaN URGENT_FLAG with 'N'
     order_details['URGENT_FLAG'] = order_details['URGENT_FLAG'].fillna('N')

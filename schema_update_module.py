@@ -298,8 +298,9 @@ def get_as_inventory_status():
         # Get All Data
         df = pd.read_sql_query("SELECT * FROM AS_Inventory_Master", conn)
         
-        # Pivot for display
+        # [FIX] Normalize columns to Upper Case because Postgres returns lowercase
         if not df.empty:
+            df.columns = df.columns.str.upper()
             pivot_df = df.pivot_table(index='PN', columns='LOCATION', values='QTY', fill_value=0).reset_index()
         else:
             pivot_df = pd.DataFrame()
