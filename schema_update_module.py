@@ -288,7 +288,7 @@ def process_as_inventory_upload(df):
             success_count += len(batch)
             
         conn.commit()
-        return True, f"Successfully Overwritten {success_count} AS inventory records. (Date: {current_date})"
+        return True, f"Successfully Overwritten {success_count} AS inventory records. (Date: {current_date})\nRecognized Locations: {', '.join(present_locations)}"
         
     except Exception as e:
         conn.rollback()
