@@ -265,6 +265,7 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # Group by URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN
     r1_stats = order_details.groupby(['URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN']).agg(
         TOTAL_ORDER_QTY=('ORDER_QTY', 'sum'),
+        TOTAL_DELIVERED_QTY=('DELIVERED_QTY', 'sum'),  # [NEW] Added
         TOTAL_AS_INV=('AS_TOTAL', 'max'), # Show Global AS Inventory for this PN
         TOTAL_REMAINING_QTY=('REMAINING_QTY', 'sum'), # This is now NET Remaining
         TOTAL_AS_DEDUCTED=('AS_DEDUCTED', 'sum') # New metric
@@ -297,6 +298,7 @@ def perform_shortage_analysis(target_customers, target_statuses):
             
     r1_report = r1_report.rename(columns={
         'TOTAL_ORDER_QTY': '총 주문 수량',
+        'TOTAL_DELIVERED_QTY': '납품완료수량',  # [NEW] Added
         # [REMOVED] 'TOTAL_AS_INV': 'AS 재고 총량',
         'TOTAL_REMAINING_QTY': '순 잔여수량', # Renamed
         # [REMOVED] 'TOTAL_AS_DEDUCTED': 'AS 재고 충당 수량',
@@ -305,10 +307,10 @@ def perform_shortage_analysis(target_customers, target_statuses):
     })
     
     # Reorder columns
-    # URGENT_FLAG, CAR_TYPE, PART_NAME, CUSTOMER, PLANT_SITE, ORDER_STATUS, PN, ...
+    # [MODIFIED] Removed ORDER_STATUS, Added 납품완료수량
     cols_order = [
-        'URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'CAR_TYPE', 'PART_NAME', 'PN',
-        '총 주문 수량'
+        'URGENT_FLAG', 'CUSTOMER', 'PLANT_SITE', 'CAR_TYPE', 'PART_NAME', 'PN',
+        '총 주문 수량', '납품완료수량'
     ] + as_cols + [
         '순 잔여수량', '부족 PKID 개수', '결품 부품 상세'
     ]
