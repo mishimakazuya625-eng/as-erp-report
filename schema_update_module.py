@@ -231,17 +231,33 @@ def process_as_inventory_upload(df):
     if 'PN' not in df.columns:
         return False, "CSV must have 'PN' column."
 
-    # Identify which location columns exist in the uploaded file
-    present_locations = [col for col in REQUIRED_LOCATIONS if col in df.columns]
+    # Identify which location columns exist in the uploaded file (Robust Matching)
+    def normalize_str(s):
+        return "".join(str(s).split()).upper()
+
+    norm_required = {normalize_str(loc): loc for loc in REQUIRED_LOCATIONS}
+    present_locations = []
+    
+    # Map CSV columns to REQUIRED_LOCATIONS
+    for col in df.columns:
+        norm_col = normalize_str(col)
+        if norm_col in norm_required:
+            # Rename the column in df to the standard name to avoid mismatch later
+            df.rename(columns={col: norm_required[norm_col]}, inplace=True)
+            present_locations.append(norm_required[norm_col])
     
     if not present_locations:
         return False, f"CSV must contain at least one of these columns: {REQUIRED_LOCATIONS}"
+
+    # Normalize PN data
+    df['PN'] = df['PN'].astype(str).str.strip().str.upper()
 
     # Melt Wide -> Long
     long_df = df.melt(id_vars=['PN'], value_vars=present_locations, var_name='LOCATION', value_name='QTY')
     
     # Clean Data
     long_df['QTY'] = pd.to_numeric(long_df['QTY'], errors='coerce').fillna(0).astype(int)
+    long_df['LOCATION'] = long_df['LOCATION'].str.strip() # Ensure consistency
     
     # [AUTO DATE]
     current_date = datetime.now().date()

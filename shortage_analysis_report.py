@@ -55,19 +55,24 @@ def load_data(target_customers, target_statuses):
     conn = get_db_connection()
     
     try:
-        # Build filter conditions
+        # Build filter conditions (Case-Insensitive for Status)
         customer_filter = "(" + ",".join([f"'{c}'" for c in target_customers]) + ")" if target_customers else "('')"
-        status_filter = "(" + ",".join([f"'{s}'" for s in target_statuses]) + ")" if target_statuses else "('')"
+        # Always use UPPER in SQL for robustness
+        status_filter = "(" + ",".join([f"'{s.upper()}'" for s in target_statuses]) + ")" if target_statuses else "('')"
         
-        # Load Orders (filtered by status)
+        # Load Orders (filtered by status - UPPER)
         orders_query = f"""
             SELECT ORDER_KEY, PN, ORDER_QTY, DELIVERED_QTY, ORDER_DATE, ORDER_STATUS, URGENT_FLAG
             FROM AS_Order
-            WHERE ORDER_STATUS IN {status_filter}
+            WHERE UPPER(ORDER_STATUS) IN {status_filter}
         """
         orders = pd.read_sql_query(orders_query, conn)
         orders.columns = orders.columns.str.upper()
         
+        # [NEW] Normalize PN data in orders
+        if not orders.empty:
+            orders['PN'] = orders['PN'].astype(str).str.strip().str.upper()
+
         # Load Products (filtered by customer only, NOT by site)
         products_query = f"""
             SELECT PN, PART_NAME, CAR_TYPE, CUSTOMER, PLANT_SITE
@@ -77,10 +82,20 @@ def load_data(target_customers, target_statuses):
         products = pd.read_sql_query(products_query, conn)
         products.columns = products.columns.str.upper()
         
+        # [NEW] Normalize PN and Site in products
+        if not products.empty:
+            products['PN'] = products['PN'].astype(str).str.strip().str.upper()
+            products['PLANT_SITE'] = products['PLANT_SITE'].astype(str).str.strip().str.upper()
+
         # Load BOM
         bom_query = "SELECT PARENT_PN, CHILD_PKID, BOM_QTY FROM BOM_Master"
         bom = pd.read_sql_query(bom_query, conn)
         bom.columns = bom.columns.str.upper()
+        
+        # [NEW] Normalize PN in BOM
+        if not bom.empty:
+            bom['PARENT_PN'] = bom['PARENT_PN'].astype(str).str.strip().str.upper()
+            bom['CHILD_PKID'] = bom['CHILD_PKID'].astype(str).str.strip().str.upper()
         
         # Load Inventory (ALL sites, not filtered)
         inv_query = """
@@ -90,6 +105,12 @@ def load_data(target_customers, target_statuses):
         """
         inventory = pd.read_sql_query(inv_query, conn)
         inventory.columns = inventory.columns.str.upper()
+        
+        # [NEW] Normalize PKID and Site in inventory
+        if not inventory.empty:
+            inventory['PKID'] = inventory['PKID'].astype(str).str.strip().str.upper()
+            inventory['PLANT_SITE'] = inventory['PLANT_SITE'].astype(str).str.strip().str.upper()
+            
         snapshot_date = inventory['SNAPSHOT_DATE'].iloc[0] if not inventory.empty else None
         
         # Load Substitutes
@@ -97,6 +118,11 @@ def load_data(target_customers, target_statuses):
         substitutes = pd.read_sql_query(sub_query, conn)
         substitutes.columns = substitutes.columns.str.upper()
         
+        # [NEW] Normalize PKID in substitutes
+        if not substitutes.empty:
+            substitutes['CHILD_PKID'] = substitutes['CHILD_PKID'].astype(str).str.strip().str.upper()
+            substitutes['SUBSTITUTE_PKID'] = substitutes['SUBSTITUTE_PKID'].astype(str).str.strip().str.upper()
+
         # Get ALL plant sites from inventory (not from filtered products)
         all_plant_sites = sorted(inventory['PLANT_SITE'].unique().tolist()) if not inventory.empty else []
         
@@ -106,6 +132,10 @@ def load_data(target_customers, target_statuses):
         # [FIX] Normalize to uppercase to avoid KeyError with 'QTY' vs 'qty'
         as_inventory.columns = as_inventory.columns.str.upper()
         
+        # [NEW] Normalize PN in AS inventory
+        if not as_inventory.empty:
+            as_inventory['PN'] = as_inventory['PN'].astype(str).str.strip().str.upper()
+
         # Pivot AS Inventory for Analysis (PN index, Columns=Location, Values=QTY)
         if not as_inventory.empty:
             as_pivot = as_inventory.pivot_table(index='PN', columns='LOCATION', values='QTY', aggfunc='sum', fill_value=0)
