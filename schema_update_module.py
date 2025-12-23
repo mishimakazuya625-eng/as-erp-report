@@ -226,7 +226,7 @@ def process_as_inventory_upload(df):
     - Overwrites ALL existing data in AS_Inventory_Master.
     - Snapshot Date is automatically set to CURRENT DATE.
     """
-    REQUIRED_LOCATIONS = ['114(A/S창고)', '114C(천안 A/S창고)', '114R(부산 A/S 창고)', '111H(HMC창고)', '운송중(927SF)', '운송중(111S)', '운송중(DEY)']
+    REQUIRED_LOCATIONS = ['114(A/S창고)', '114C(천안 A/S창고)', '114R(부산 A/S창고)', '111H(HMC창고)', '운송중(927SF)', '운송중(111S)', '운송중(DEY)']
     
     if 'PN' not in df.columns:
         return False, "CSV must have 'PN' column."
