@@ -234,12 +234,24 @@ def perform_shortage_analysis(target_customers, target_statuses):
     # Fill NaN URGENT_FLAG with 'N'
     order_details['URGENT_FLAG'] = order_details['URGENT_FLAG'].fillna('N')
     
-    exploded = order_details.merge(bom, left_on='PN', right_on='PARENT_PN', how='inner')
+    # [NEW] For R2: Only include orders with REMAINING_QTY > 0 for BOM explosion
+    # This ensures zero remaining qty PNs don't contribute to material requirements
+    orders_for_bom = order_details[order_details['REMAINING_QTY'] > 0]
+    
+    if orders_for_bom.empty:
+        # All orders have 0 remaining - still generate R1 but R2 will be empty
+        exploded = pd.DataFrame()
+    else:
+        exploded = orders_for_bom.merge(bom, left_on='PN', right_on='PARENT_PN', how='inner')
     
     if exploded.empty:
-        return None, None, None, "No BOM data found for the selected products."
+        # Generate R1 report even without shortage data
+        exploded = pd.DataFrame(columns=['PN', 'REMAINING_QTY', 'BOM_QTY', 'CHILD_PKID', 'URGENT_FLAG', 'PLANT_SITE'])
     
-    exploded['REQUIRED_QTY'] = exploded['REMAINING_QTY'] * exploded['BOM_QTY']
+    if not exploded.empty:
+        exploded['REQUIRED_QTY'] = exploded['REMAINING_QTY'] * exploded['BOM_QTY']
+    else:
+        exploded['REQUIRED_QTY'] = 0
     
     # --- Step 2: URGENT Propagation ---
     urgent_pkids = exploded[exploded['URGENT_FLAG'] == 'Y']['CHILD_PKID'].unique()
@@ -283,6 +295,10 @@ def perform_shortage_analysis(target_customers, target_statuses):
     ).reset_index()
     
     r1_report = r1_stats.merge(r1_shortage, on=['CUSTOMER', 'PLANT_SITE', 'ORDER_STATUS', 'PN'], how='left')
+    
+    # [NEW] For PNs with REMAINING_QTY = 0, set shortage info to 0/blank
+    r1_report.loc[r1_report['TOTAL_REMAINING_QTY'] == 0, 'SHORT_PKID_COUNT'] = 0
+    r1_report.loc[r1_report['TOTAL_REMAINING_QTY'] == 0, 'SHORT_PKID_DETAILS'] = ''
     
     # [NEW] Merge AS Inventory Details (PN based)
     if not as_pivot_info.empty:
